@@ -269,7 +269,7 @@ class MusicCog(commands.Cog):
         if player is None:
             await interaction.response.send_message("Nic nie jest odtwarzane.", ephemeral=True)
             return
-        mode = player.queue.cycle_loop()
+        mode = player.cycle_loop()
         await player.refresh_ui()
         await interaction.response.send_message(f"🔁 Pętla: **{mode.value}**")
 
@@ -301,7 +301,7 @@ class MusicCog(commands.Cog):
         if player is None:
             await interaction.response.send_message("Kolejka pusta.", ephemeral=True)
             return
-        player.queue.shuffle()
+        player.shuffle()
         await interaction.response.send_message("🔀 Przetasowano.")
 
 

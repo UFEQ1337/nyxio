@@ -83,7 +83,7 @@ class ControlsView(discord.ui.View):
         self, interaction: discord.Interaction, _: discord.ui.Button[ControlsView]
     ) -> None:
         await interaction.response.defer()
-        self._player.queue.cycle_loop()
+        self._player.cycle_loop()
         await self._player.refresh_ui()
 
     # ---- Rząd 1: dźwięk + kolejka + teraz ----------------------------------
@@ -109,7 +109,7 @@ class ControlsView(discord.ui.View):
         self, interaction: discord.Interaction, _: discord.ui.Button[ControlsView]
     ) -> None:
         await interaction.response.defer()
-        self._player.queue.shuffle()
+        self._player.shuffle()
         await interaction.followup.send("🔀 Przetasowano.", ephemeral=True)
 
     @discord.ui.button(label="Kolejka", emoji="📜", row=1)

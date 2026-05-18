@@ -179,3 +179,71 @@ async def test_previous_when_idle_advances(player, make_track):
     player.player.paused = False
     assert await player.previous() is True
     player.player.play.assert_awaited()
+
+
+# ---- Fix 2: pętla zamiast rekurencji + komunikat o błędzie ---------------
+
+
+async def test_play_failures_stop_after_limit_and_notify(player, make_track):
+    """Seria nieudanych play kończy się IDLE + 1 komunikat (bez RecursionError)."""
+    import nyxio.core.player as player_mod
+
+    for name in ("a", "b", "c", "d", "e"):
+        player.queue.add(make_track(name))
+    player.player.play = AsyncMock(side_effect=RuntimeError("boom"))
+    player.text_channel.send = AsyncMock()
+
+    await player._advance()
+
+    assert player.player.play.await_count == player_mod._MAX_PLAY_FAILURES
+    assert player.state is PlayerState.IDLE
+    player.text_channel.send.assert_awaited_once()
+
+
+async def test_advance_skips_failing_track_then_plays_next(player, make_track):
+    player.queue.add(make_track("bad"))
+    player.queue.add(make_track("good"))
+    player.player.play = AsyncMock(side_effect=[RuntimeError("boom"), None])
+
+    await player._advance()
+
+    assert player.player.play.await_count == 2
+    assert player.state is PlayerState.PLAYING
+    assert player._last_track.title == "good"
+
+
+# ---- Fix 1: lock serializujący _advance (regresja: brak deadlocku) -------
+
+
+async def test_concurrent_advance_consumes_each_track_once(player, make_track):
+    import asyncio
+
+    player.queue.add(make_track("a"))
+    player.queue.add(make_track("b"))
+
+    await asyncio.gather(player._advance(), player._advance())
+
+    assert player.player.play.await_count == 2
+    assert len(player.queue) == 0
+
+
+# ---- Fix 3: persist po mutacjach kolejki --------------------------------
+
+
+async def test_skip_persists_snapshot(player):
+    import asyncio
+
+    player.player.playing = True
+    await player.skip()
+    await asyncio.sleep(0)  # pozwól dobiec fire-and-forget snapshotowi
+    player._manager.state_store.save_queue.assert_awaited()
+
+
+async def test_shuffle_and_loop_persist(player, make_track):
+    import asyncio
+
+    player.queue.add(make_track("a"))
+    player.shuffle()
+    player.cycle_loop()
+    await asyncio.sleep(0)
+    assert player._manager.state_store.save_queue.await_count >= 1

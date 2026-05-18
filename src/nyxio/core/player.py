@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import discord
 import wavelink
 
-from nyxio.core.queue import TrackQueue
+from nyxio.core.queue import LoopMode, TrackQueue
 from nyxio.core.track import Track
 from nyxio.infra.logging import get_logger
 from nyxio.utils.errors import QueueFullError
@@ -27,6 +27,11 @@ log = get_logger("player")
 
 # Reasony końca utworu, po których NIE przewijamy dalej (sami wywołaliśmy play).
 _NO_ADVANCE = {"replaced", "cleanup"}
+
+# Ile kolejnych nieudanych prób odtworzenia tolerujemy w jednym przejściu
+# kolejki, zanim odpuścimy i powiadomimy kanał (chroni przed zjedzeniem
+# całej kolejki, gdy padł łańcuch YouTube/Lavalink).
+_MAX_PLAY_FAILURES = 3
 
 
 class PlayerState(enum.Enum):
@@ -56,6 +61,11 @@ class GuildPlayer:
         self.autoplay = manager.guild_config.get_autoplay(guild_id)
         self._idle_task: asyncio.Task[None] | None = None
         self._last_track: Track | None = None
+        # Serializuje _advance: zdarzenia track_end i bezpośrednie wywołania
+        # (skip/previous/enqueue) nie mogą równolegle wołać queue.get_next().
+        self._advance_lock = asyncio.Lock()
+        # Trzymamy referencję do fire-and-forget snapshotu, by GC go nie ubił.
+        self._persist_task: asyncio.Task[None] | None = None
 
     # ---- Właściwości pomocnicze -------------------------------------------
 
@@ -89,6 +99,7 @@ class GuildPlayer:
     async def skip(self) -> None:
         if self.player.playing or self.player.paused:
             await self.player.stop()  # -> track_end(stopped) -> _advance
+        self._persist()
 
     async def previous(self) -> bool:
         """Cofa do poprzedniego utworu. False = brak historii."""
@@ -98,7 +109,17 @@ class GuildPlayer:
             await self.player.stop()  # -> track_end -> _advance pobierze poprzedni
         else:
             await self._advance()
+        self._persist()
         return True
+
+    def shuffle(self) -> None:
+        self.queue.shuffle()
+        self._persist()
+
+    def cycle_loop(self) -> LoopMode:
+        mode = self.queue.cycle_loop()
+        self._persist()
+        return mode
 
     async def pause(self) -> bool:
         if self.player.playing and not self.player.paused:
@@ -138,23 +159,43 @@ class GuildPlayer:
         await self._advance()
 
     async def _advance(self) -> None:
-        track = self.queue.get_next()
-        if track is None and self.autoplay and await self._try_autoplay():
-            track = self.queue.get_next()
-        if track is None:
-            self.state = PlayerState.IDLE
-            self._arm_idle_timeout()
-            return
-        self._cancel_idle_timeout()
+        async with self._advance_lock:
+            failures = 0
+            while True:
+                track = self.queue.get_next()
+                if track is None and self.autoplay and await self._try_autoplay():
+                    track = self.queue.get_next()
+                if track is None:
+                    self.state = PlayerState.IDLE
+                    self._arm_idle_timeout()
+                    return
+                self._cancel_idle_timeout()
+                try:
+                    await self.player.play(track.playable, volume=self.volume_pct)
+                except Exception:  # noqa: BLE001
+                    log.exception(
+                        "play_failed", guild_id=self.guild_id, title=track.title
+                    )
+                    failures += 1
+                    if failures >= _MAX_PLAY_FAILURES:
+                        self.state = PlayerState.IDLE
+                        self._arm_idle_timeout()
+                        await self._notify_playback_error()
+                        return
+                    continue  # spróbuj kolejny utwór z kolejki
+                self._last_track = track
+                self.state = PlayerState.PLAYING
+                await self._publish_now_playing(track)
+                return
+
+    async def _notify_playback_error(self) -> None:
         try:
-            await self.player.play(track.playable, volume=self.volume_pct)
-        except Exception:  # noqa: BLE001
-            log.exception("play_failed", guild_id=self.guild_id, title=track.title)
-            await self._advance()
-            return
-        self._last_track = track
-        self.state = PlayerState.PLAYING
-        await self._publish_now_playing(track)
+            await self.text_channel.send(
+                "❌ Nie udało się odtworzyć utworów — problem z YouTube/Lavalink. "
+                "Spróbuj ponownie za chwilę."
+            )
+        except discord.HTTPException:
+            pass
 
     async def _try_autoplay(self) -> bool:
         """Dograj powiązane utwory (YouTube Mix z ostatniego). True = dodano.
@@ -268,7 +309,8 @@ class GuildPlayer:
     # ---- Pomocnicze -------------------------------------------------------
 
     def _persist(self) -> None:
-        asyncio.create_task(  # noqa: RUF006 — fire-and-forget snapshot
+        # Referencję trzymamy w polu, żeby GC nie ubił taska przed zapisem.
+        self._persist_task = asyncio.create_task(
             self._manager.state_store.save_queue(self.guild_id, self.queue.to_snapshot())
         )
 

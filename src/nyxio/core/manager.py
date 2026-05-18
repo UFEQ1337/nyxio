@@ -50,15 +50,19 @@ class PlayerManager:
             log.info("player_created", guild_id=guild.id)
             return player
 
-    async def teardown(self, guild_id: int) -> None:
+    async def teardown(self, guild_id: int, *, clear_state: bool = True) -> None:
         player = self._players.pop(guild_id, None)
         if player is None:
             return
-        log.info("player_teardown", guild_id=guild_id)
+        log.info("player_teardown", guild_id=guild_id, clear_state=clear_state)
         await player.shutdown()
-        await self.state_store.clear_queue(guild_id)
+        # clear_state=False przy gracefulnym restarcie procesu — snapshot
+        # ma przetrwać, żeby /wznow odzyskał kolejkę. Świadome /stop oraz
+        # idle-timeout dalej czyszczą (clear_state=True).
+        if clear_state:
+            await self.state_store.clear_queue(guild_id)
 
     async def shutdown_all(self) -> None:
         for guild_id in list(self._players):
-            await self.teardown(guild_id)
+            await self.teardown(guild_id, clear_state=False)
         await self.state_store.close()
