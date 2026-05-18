@@ -40,6 +40,14 @@ plugins:
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
+    # Klienci zgodni z OAuth (inaczej token nie jest używany do żądań
+    # i wraca "This video requires login"). Kolejność = priorytet.
+    clients:
+      - MUSIC
+      - WEB
+      - MWEB
+      - WEBEMBEDDED
+      - TVHTML5EMBEDDED
     # OAuth obchodzi blokadę "This video requires login" na IP VPS.
     # 1. start z pustym tokenem -> w logach pojawi się link+kod do
     #    autoryzacji (zaloguj BURNER konto Google).
