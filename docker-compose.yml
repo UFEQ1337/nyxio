@@ -22,7 +22,9 @@ services:
       - _JAVA_OPTIONS=-Xmx1g -Xms1g
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
-      - ./lavalink/plugins:/opt/Lavalink/plugins
+      # Nazwany wolumen — Lavalink (nie-root) musi mieć prawo zapisu
+      # by pobrać wtyczkę youtube-source. Bind z hosta blokował to na Linuksie.
+      - lavalink-plugins:/opt/Lavalink/plugins
     healthcheck:
       # Lavalink posiada endpoint /version lub /
       test:
@@ -43,3 +45,4 @@ services:
 
 volumes:
   redis-data:
+  lavalink-plugins:
