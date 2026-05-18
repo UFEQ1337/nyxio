@@ -44,10 +44,10 @@ plugins:
     # ANDROID_VR, WEB, WEB_EMBEDDED_PLAYER) i wszystkie pada na IP VPS
     # ("This video requires login"). Kolejnosc = priorytet.
     clients:
+      - TV
       - MUSIC
       - WEB
       - WEBEMBEDDED
-      - TVHTML5EMBEDDED
     # OAuth wlaczone:
     oauth:
       enabled: true
