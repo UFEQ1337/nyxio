@@ -7,8 +7,11 @@ license = { text = "MIT" }
 authors = [{ name = "UFEQ1337" }]
 requires-python = ">=3.12"
 dependencies = [
-    # Audio przez Lavalink (wavelink jako klient). Bot nie transkoduje.
-    "discord.py>=2.7",
+    # Audio przez Lavalink (wavelink jako klient). Bot nie transkoduje, ale
+    # discord.py i tak musi szyfrowac wlasne polaczenie glosowe (UDP) do
+    # Discorda — extra [voice] dociaga PyNaCl. Bez tego connect() do kanalu
+    # konczy sie ChannelTimeoutException ("voice will NOT be supported").
+    "discord.py[voice]>=2.7",
     "wavelink>=3,<4",
     "pydantic-settings>=2.2",
     "structlog>=24.1",

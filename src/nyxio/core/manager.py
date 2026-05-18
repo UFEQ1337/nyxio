@@ -42,9 +42,26 @@ class PlayerManager:
             if member.voice is None or member.voice.channel is None:
                 raise NotInVoiceError("Dołącz najpierw do kanału głosowego.")
 
-            voice = await member.voice.channel.connect(
-                cls=wavelink.Player, self_deaf=True
-            )
+            try:
+                voice = await member.voice.channel.connect(
+                    cls=wavelink.Player, self_deaf=True
+                )
+            except Exception as exc:  # noqa: BLE001
+                # Nieudany connect (timeout/half-open) zostawia wiszący
+                # voice client — bez sprzątania kolejne /play dostaje
+                # "Already connected to a voice channel".
+                log.warning(
+                    "voice_connect_failed", guild_id=guild.id, error=str(exc)
+                )
+                stale = guild.voice_client
+                if stale is not None:
+                    try:
+                        await stale.disconnect(force=True)
+                    except Exception:  # noqa: BLE001
+                        pass
+                raise NotInVoiceError(
+                    "Nie udało się połączyć z kanałem głosowym — spróbuj ponownie."
+                ) from exc
             player = GuildPlayer(guild.id, voice, text_channel, self)
             self._players[guild.id] = player
             log.info("player_created", guild_id=guild.id)
