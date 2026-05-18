@@ -40,6 +40,14 @@ plugins:
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
+    # OAuth obchodzi blokadę "This video requires login" na IP VPS.
+    # 1. start z pustym tokenem -> w logach pojawi się link+kod do
+    #    autoryzacji (zaloguj BURNER konto Google).
+    # 2. plugin wypisze refreshToken -> wstaw go do .env jako
+    #    NYXIO_YOUTUBE_REFRESH_TOKEN i zrestartuj (przeżywa restart).
+    oauth:
+      enabled: true
+      refreshToken: "${YOUTUBE_REFRESH_TOKEN:}"
 
 logging:
   level:
