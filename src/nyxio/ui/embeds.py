@@ -26,6 +26,11 @@ def _dur(track: Track) -> str:
     return format_duration(track.length // 1000 if track.length else None)
 
 
+def _total(ms: int) -> str:
+    """Łączny czas kolejki -> 'M:SS'. Pusta kolejka -> '—' (nie 'LIVE')."""
+    return format_duration(ms // 1000) if ms > 0 else "—"
+
+
 def _requester(track: Track) -> str:
     if track.requested_by_id:
         return f"<@{track.requested_by_id}>"
@@ -58,7 +63,7 @@ def now_playing_embed(
             inline=False,
         )
 
-    total = format_duration(queue.total_length_ms // 1000)
+    total = _total(queue.total_length_ms)
     ap = "🟢 wł." if autoplay else "⚪ wył."
     embed.add_field(
         name="​",
@@ -93,6 +98,49 @@ def queue_embed(queue: TrackQueue, page: int = 1) -> discord.Embed:
         embed.add_field(name="Następne", value="\n".join(lines), inline=False)
     else:
         embed.add_field(name="Następne", value="*pusto*", inline=False)
-    total = format_duration(queue.total_length_ms // 1000)
+    total = _total(queue.total_length_ms)
     embed.set_footer(text=f"Strona {page}/{pages} · Razem: {len(queue)} · ⏳ {total}")
+    return embed
+
+
+def help_embed() -> discord.Embed:
+    embed = discord.Embed(
+        title="🎵 Nyxio — pomoc",
+        description="Lista komend. Sterowanie też przyciskami pod *Teraz odtwarzane*.",
+        color=discord.Color.blurple(),
+    )
+    embed.add_field(
+        name="▶️ Odtwarzanie",
+        value=(
+            "`/play <link|fraza>` — dodaj i graj\n"
+            "`/teraz` — bieżący utwór + pasek postępu\n"
+            "`/pause` — pauza/wznowienie\n"
+            "`/skip` — następny · `/previous` — poprzedni\n"
+            "`/seek <mm:ss>` — przewiń · `/stop` — zatrzymaj i rozłącz"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="📜 Kolejka",
+        value=(
+            "`/queue [str]` — pokaż kolejkę\n"
+            "`/loop` — pętla (off/utwór/kolejka)\n"
+            "`/shuffle` — przetasuj · `/wznow` — przywróć sesję"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="🔊 Dźwięk",
+        value=(
+            "`/volume [0-200]` — głośność\n"
+            "`/filter <none|bass|nightcore|eq>` — filtr\n"
+            "`/autoplay` — auto-dograj powiązane"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="⚙️ Ustawienia / inne",
+        value="`/dj set|clear|show` — rola DJ · `/ping` — diagnostyka",
+        inline=False,
+    )
     return embed

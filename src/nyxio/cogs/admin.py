@@ -8,6 +8,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from nyxio.ui.embeds import help_embed
+
 if TYPE_CHECKING:
     from nyxio.bot import NyxioBot
 
@@ -15,6 +17,10 @@ if TYPE_CHECKING:
 class AdminCog(commands.Cog):
     def __init__(self, bot: NyxioBot) -> None:
         self.bot = bot
+
+    @app_commands.command(name="pomoc", description="Lista komend Nyxio.")
+    async def pomoc(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(embed=help_embed(), ephemeral=True)
 
     @app_commands.command(name="ping", description="Sprawdź czy Nyxio żyje.")
     async def ping(self, interaction: discord.Interaction) -> None:
