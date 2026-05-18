@@ -40,14 +40,18 @@ plugins:
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
-    # Jawna lista klientow — bez niej Lavalink bierze domyslne (WEB_REMIX,
-    # ANDROID_VR, WEB, WEB_EMBEDDED_PLAYER) i wszystkie pada na IP VPS
-    # ("This video requires login"). Kolejnosc = priorytet.
+    # Kolejnosc = priorytet. Wg tabeli youtube-source: tylko WEB/WEBEMBEDDED
+    # uzywaja poTokena; TV jest jedynym klientem OAuth, ale NIE laduje wideo
+    # (tylko playback). IOS/TVHTML5_SIMPLY/ANDROID_VR laduja wideo bez POT i
+    # bez OAuth — proba zanim padnie na WEB+POT. TV na koncu = playback OAuth.
     clients:
-      - TV
-      - MUSIC
+      - TVHTML5_SIMPLY
+      - IOS
+      - ANDROID_VR
       - WEB
       - WEBEMBEDDED
+      - MUSIC
+      - TV
     # OAuth wlaczone:
     oauth:
       enabled: true
