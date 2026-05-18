@@ -40,6 +40,14 @@ plugins:
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
+    # Jawna lista klientow — bez niej Lavalink bierze domyslne (WEB_REMIX,
+    # ANDROID_VR, WEB, WEB_EMBEDDED_PLAYER) i wszystkie pada na IP VPS
+    # ("This video requires login"). Kolejnosc = priorytet.
+    clients:
+      - MUSIC
+      - WEB
+      - WEBEMBEDDED
+      - TVHTML5EMBEDDED
     # OAuth wlaczone:
     oauth:
       enabled: true
