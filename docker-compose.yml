@@ -22,6 +22,9 @@ services:
       # OAuth youtube-source. Puste przy 1. starcie (device-login w logach),
       # potem wklej token do .env jako NYXIO_YOUTUBE_REFRESH_TOKEN.
       - YOUTUBE_REFRESH_TOKEN=${NYXIO_YOUTUBE_REFRESH_TOKEN:-}
+      # Obsluga poToken z pliku .env (zmienne NYXIO_PO_TOKEN i NYXIO_VISITOR_DATA)
+      - YOUTUBE_PO_TOKEN=${NYXIO_PO_TOKEN:-}
+      - YOUTUBE_VISITOR_DATA=${NYXIO_VISITOR_DATA:-}
       - _JAVA_OPTIONS=-Xmx1g -Xms1g
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
