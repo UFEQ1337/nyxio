@@ -3,6 +3,8 @@ name = "nyxio"
 version = "0.1.0"
 description = "Nyxio — nowoczesny bot muzyczny dla Discorda (YouTube, kolejki, interaktywny UI)."
 readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "UFEQ1337" }]
 requires-python = ">=3.12"
 dependencies = [
     # Audio przez Lavalink (wavelink jako klient). Bot nie transkoduje.

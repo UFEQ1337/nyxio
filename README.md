@@ -1,8 +1,14 @@
 # Nyxio 🎶
 
+> Autor: **[UFEQ1337](https://github.com/UFEQ1337)** · Licencja: **MIT** ·
+> © 2026 UFEQ1337
+
 Nowoczesny bot muzyczny dla Discorda: odtwarzanie z YouTube, kolejka z
 historią, filtry audio, przewijanie, AutoPlay i interaktywny interfejs
 (embed „Teraz odtwarzane” + przyciski). Slash-only, polski UI.
+
+Stworzone przez **UFEQ1337**. Możesz używać za darmo — wymagane
+zachowanie informacji o autorze (patrz [Licencja](#licencja)).
 
 **Stos:** Python 3.12 · discord.py 2.7 · wavelink 3 · **Lavalink v4**
 (wtyczka `youtube-source`) · Redis · Docker Compose.
@@ -206,3 +212,22 @@ src/nyxio/
 lavalink/application.yml   # konfiguracja węzła + wtyczka youtube-source
 docker-compose.yml         # bot + lavalink + redis
 ```
+
+---
+
+## Autor
+
+**UFEQ1337** — [github.com/UFEQ1337](https://github.com/UFEQ1337)
+
+Projekt zaprojektowany i zaimplementowany przez UFEQ1337.
+
+## Licencja
+
+Wydane na licencji **MIT** — pełny tekst w pliku [`LICENSE`](LICENSE).
+
+Możesz **bezpłatnie** używać, kopiować, modyfikować, rozpowszechniać i
+wykorzystywać komercyjnie ten projekt — pod jednym warunkiem:
+**zachowujesz informację o prawach autorskich i treść licencji**
+(uznanie autorstwa: © 2026 UFEQ1337). Oprogramowanie dostarczane „as
+is”, bez gwarancji.
+
