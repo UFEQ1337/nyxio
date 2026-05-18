@@ -17,13 +17,16 @@ zachowanie informacji o autorze (patrz [Licencja](#licencja)).
 
 ## Architektura
 
-Trzy kontenery (`docker-compose.yml`):
+Cztery kontenery (`docker-compose.yml`):
 
 | Usługa | Rola |
 |---|---|
 | **bot** | Logika: komendy, kolejka, UI, stan per-serwer (Python, lekki ~50 MB RAM) |
 | **lavalink** | Pozyskiwanie i **transkodowanie audio** (JVM); bot sam nie koduje dźwięku |
+| **yt-cipher** | Zdalny deszyfrator sygnatur YouTube — odciąża wtyczkę `youtube-source` przy nowych wersjach player-script |
 | **redis** | Trwały snapshot kolejki → wznowienie sesji po restarcie (`/wznow`) |
+
+Zależności startowe: `yt-cipher` → `lavalink` (healthcheck) → `bot`.
 
 ### Dlaczego Lavalink, a nie yt-dlp/FFmpeg?
 
@@ -40,6 +43,15 @@ został **zastąpiony przez Lavalink**. Powody:
 > `yt-dlp` ani `FFmpeg` **nie są używane** i nie ma ich w obrazie bota.
 > Rozwiązywanie linków/fraz robi `wavelink.Playable.search` → Lavalink.
 
+### Po co osobny `yt-cipher`?
+
+Lokalny parser sygnatur we wtyczce `youtube-source` bywa nieaktualny przy
+najświeższych wersjach player-script YouTube (błąd *„must find sig
+function”*). Kontener `yt-cipher` liczy sygnaturę po stronie serwera i
+nie wystawia portu na hosta — Lavalink łączy się z nim wyłącznie po
+wewnętrznej sieci Compose. Współdzielony sekret (`NYXIO_YTCIPHER_TOKEN`)
+zabezpiecza ten endpoint.
+
 ### Model działania
 
 `GuildPlayer` (per serwer) jest **sterowany zdarzeniami** wavelink
@@ -53,7 +65,7 @@ Błędy są izolowane per-serwer.
 ## Szybki start (Docker)
 
 ```bash
-cp .env.example .env          # uzupełnij NYXIO_DISCORD_TOKEN
+cp .env.example .env          # ustaw NYXIO_DISCORD_TOKEN i NYXIO_YTCIPHER_TOKEN
 docker compose up -d --build
 docker compose logs -f bot    # czekaj na "lavalink_node_ready" i "ready"
 ```
@@ -162,8 +174,16 @@ Logika: [`utils/permissions.py`](src/nyxio/utils/permissions.py).
 | `NYXIO_LAVALINK_PORT` | `2333` | Port węzła |
 | `NYXIO_LAVALINK_PASSWORD` | `youshallnotpass` | Hasło węzła |
 
+Zmienne czytane przez `docker-compose.yml` (Lavalink / YouTube):
+
+| Zmienna | Domyślnie | Opis |
+|---|---|---|
+| `NYXIO_YTCIPHER_TOKEN` | `changeme` | Sekret współdzielony Lavalink ↔ `yt-cipher` (ustaw własny) |
+| `NYXIO_YOUTUBE_REFRESH_TOKEN` | — | OAuth YouTube — omija „This video requires login” na VPS (zob. niżej) |
+| `NYXIO_PO_TOKEN` / `NYXIO_VISITOR_DATA` | — | Opcjonalny poToken; zwykle zbędny gdy działa `yt-cipher` + OAuth |
+
 Wzór: [`.env.example`](.env.example). `.env` i `data/` są w
-`.gitignore` — token nigdy nie trafia do repo.
+`.gitignore` — sekrety nigdy nie trafiają do repo.
 
 ### Trwałość
 
@@ -188,6 +208,12 @@ Obrazy są multi-arch (x86_64 i ARM64 — np. Oracle/Ampere działa).
 Zalecane ≥ 2 GB RAM (Lavalink JVM `-Xmx1g` + narzut). Aktualizacja:
 `git pull && docker compose up -d --build`.
 
+> **Pierwszy start na VPS:** YouTube często wymaga logowania spoza
+> domowego IP. Zostaw `NYXIO_YOUTUBE_REFRESH_TOKEN` puste — Lavalink
+> wypisze w logach link i kod do autoryzacji (zaloguj konto *burner*).
+> Wklej zwrócony `refreshToken` do `.env` i zrestartuj. Szczegóły w
+> komentarzach [`.env.example`](.env.example).
+
 ## Jakość
 
 ```bash
@@ -210,7 +236,7 @@ src/nyxio/
 ├── infra/            # logging · state_store (Redis) · supervisor
 └── utils/            # query · filters · progressbar · permissions · ...
 lavalink/application.yml   # konfiguracja węzła + wtyczka youtube-source
-docker-compose.yml         # bot + lavalink + redis
+docker-compose.yml         # bot + lavalink + yt-cipher + redis
 ```
 
 ---
