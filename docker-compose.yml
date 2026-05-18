@@ -1,0 +1,45 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      # Trwała konfiguracja per-serwer (głośność, rola DJ, AutoPlay).
+      # Bez tego ustawienia ginęły przy każdym przebudowaniu kontenera.
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_started
+      lavalink:
+        condition: service_healthy
+
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    restart: unless-stopped
+    environment:
+      # Podstawiane w application.yml jako ${LAVALINK_SERVER_PASSWORD}.
+      - LAVALINK_SERVER_PASSWORD=${NYXIO_LAVALINK_PASSWORD:-youshallnotpass}
+      - _JAVA_OPTIONS=-Xmx1g -Xms1g
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      - ./lavalink/plugins:/opt/Lavalink/plugins
+    healthcheck:
+      # Lavalink posiada endpoint /version lub /
+      test:
+        [
+          "CMD-SHELL",
+          'wget --no-verbose --tries=1 --spider --header="Authorization: $${LAVALINK_SERVER_PASSWORD}" http://localhost:2333/version || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+volumes:
+  redis-data:

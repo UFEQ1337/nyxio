@@ -1,0 +1,31 @@
+# --- Sekrety / dane (NIGDY do repo) ---
+.env
+.env.*
+!.env.example
+data/
+!data/.gitkeep
+
+# --- Lavalink: pobierane wtyczki (JAR-y ściągane przy starcie) ---
+lavalink/plugins/*
+!lavalink/plugins/.gitkeep
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Lokalne ustawienia Claude Code ---
+.claude/
+
+# --- Build / IDE / OS ---
+build/
+dist/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
