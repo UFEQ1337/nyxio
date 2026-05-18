@@ -52,6 +52,14 @@ plugins:
       - WEBEMBEDDED
       - MUSIC
       - TV
+    # Zdalny deszyfrator sygnatur. Lokalny parser w 1.18.1 nie ogarnia
+    # najnowszego player-script ("must find sig function") — sygnature
+    # liczy serwis yt-cipher (sidecar w docker-compose, siec compose).
+    # password musi byc rowne API_TOKEN yt-cipher (oba z NYXIO_YTCIPHER_TOKEN).
+    remoteCipher:
+      url: "http://yt-cipher:8001"
+      password: "${YOUTUBE_REMOTE_CIPHER_PASSWORD:}"
+      userAgent: "nyxio"
     # OAuth wlaczone:
     oauth:
       enabled: true

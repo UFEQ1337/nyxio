@@ -25,7 +25,14 @@ services:
       # Obsluga poToken z pliku .env (zmienne NYXIO_PO_TOKEN i NYXIO_VISITOR_DATA)
       - YOUTUBE_PO_TOKEN=${NYXIO_PO_TOKEN:-}
       - YOUTUBE_VISITOR_DATA=${NYXIO_VISITOR_DATA:-}
+      # Haslo do zdalnego cipher (yt-cipher). Musi byc takie samo jak API_TOKEN
+      # serwisu yt-cipher. Lavalink czyta je w application.yml jako
+      # ${YOUTUBE_REMOTE_CIPHER_PASSWORD}.
+      - YOUTUBE_REMOTE_CIPHER_PASSWORD=${NYXIO_YTCIPHER_TOKEN:-changeme}
       - _JAVA_OPTIONS=-Xmx1g -Xms1g
+    depends_on:
+      yt-cipher:
+        condition: service_started
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
       # UWAGA: NIE montować /opt/Lavalink/plugins. Każdy mount (bind/named)
@@ -43,6 +50,16 @@ services:
       timeout: 5s
       retries: 12
       start_period: 40s
+
+  # Zdalny deszyfrator sygnatur YouTube. Lokalny parser w youtube-source
+  # 1.18.1 nie ogarnia najnowszego player-script (blad "must find sig
+  # function") — yt-cipher liczy sygnature po stronie serwera. Bez portu
+  # na hosta: Lavalink siega po sieci compose (http://yt-cipher:8001).
+  yt-cipher:
+    image: ghcr.io/kikkia/yt-cipher:master
+    restart: unless-stopped
+    environment:
+      - API_TOKEN=${NYXIO_YTCIPHER_TOKEN:-changeme}
 
   redis:
     image: redis:7-alpine
