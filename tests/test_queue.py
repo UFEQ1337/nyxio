@@ -118,3 +118,24 @@ def test_clear_wipes_history(make_track):
     q.clear()
     assert q.has_previous is False
     assert q.previous() is False
+
+
+def test_snapshot_includes_history(make_track):
+    """Snapshot persystuje historie — chronimy przed utrata przy restarcie."""
+    q = TrackQueue()
+    a, b, c = make_track("a"), make_track("b"), make_track("c")
+    for t in (a, b, c):
+        q.add(t)
+    q.get_next()  # a -> current
+    q.get_next()  # b -> current, a -> history
+    snap = q.to_snapshot()
+    assert [e["title"] for e in snap["history"]] == ["a"]
+    assert snap["current"]["title"] == "b"
+    assert [e["title"] for e in snap["upcoming"]] == ["c"]
+
+
+def test_snapshot_empty_history_is_empty_list(make_track):
+    q = TrackQueue()
+    q.add(make_track("a"))
+    snap = q.to_snapshot()
+    assert snap["history"] == []

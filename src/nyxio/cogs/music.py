@@ -21,6 +21,11 @@ if TYPE_CHECKING:
     from nyxio.bot import NyxioBot
 
 
+# Wspolny komunikat dla stanu "brak playera w gildii" — wczesniej mieszanka
+# "Nic nie jest odtwarzane." / "Kolejka pusta." dla tego samego stanu mylila.
+_NO_PLAYER_MSG = "Nic nie jest odtwarzane."
+
+
 def _parse_timestamp(value: str) -> int | None:
     """'mm:ss' / 'h:mm:ss' / 'sekundy' -> ms. None = niepoprawne."""
     value = value.strip()
@@ -107,7 +112,7 @@ class MusicCog(commands.Cog):
     async def skip(self, interaction: discord.Interaction) -> None:
         player = self.bot.manager.get(interaction.guild_id or 0)
         if player is None:
-            await interaction.response.send_message("Nic nie jest odtwarzane.", ephemeral=True)
+            await interaction.response.send_message(_NO_PLAYER_MSG, ephemeral=True)
             return
         await player.skip()
         await interaction.response.send_message("⏭️ Pominięto.")
@@ -116,7 +121,7 @@ class MusicCog(commands.Cog):
     async def previous(self, interaction: discord.Interaction) -> None:
         player = self.bot.manager.get(interaction.guild_id or 0)
         if player is None:
-            await interaction.response.send_message("Nic nie jest odtwarzane.", ephemeral=True)
+            await interaction.response.send_message(_NO_PLAYER_MSG, ephemeral=True)
             return
         if await player.previous():
             await interaction.response.send_message("⏮️ Poprzedni utwór.")
@@ -129,7 +134,7 @@ class MusicCog(commands.Cog):
     async def pause(self, interaction: discord.Interaction) -> None:
         player = self.bot.manager.get(interaction.guild_id or 0)
         if player is None:
-            await interaction.response.send_message("Nic nie jest odtwarzane.", ephemeral=True)
+            await interaction.response.send_message(_NO_PLAYER_MSG, ephemeral=True)
             return
         paused = await player.pause()
         await player.refresh_ui()
@@ -140,7 +145,7 @@ class MusicCog(commands.Cog):
     async def seek(self, interaction: discord.Interaction, position: str) -> None:
         player = self.bot.manager.get(interaction.guild_id or 0)
         if player is None or player.queue.current is None:
-            await interaction.response.send_message("Nic nie jest odtwarzane.", ephemeral=True)
+            await interaction.response.send_message(_NO_PLAYER_MSG, ephemeral=True)
             return
         ms = _parse_timestamp(position)
         if ms is None:
@@ -167,7 +172,7 @@ class MusicCog(commands.Cog):
     ) -> None:
         player = self.bot.manager.get(interaction.guild_id or 0)
         if player is None:
-            await interaction.response.send_message("Nic nie jest odtwarzane.", ephemeral=True)
+            await interaction.response.send_message(_NO_PLAYER_MSG, ephemeral=True)
             return
         await player.set_filter(preset.value)
         await interaction.response.send_message(f"🎛️ Filtr: **{preset.value}**")
@@ -176,7 +181,7 @@ class MusicCog(commands.Cog):
     async def stop(self, interaction: discord.Interaction) -> None:
         player = self.bot.manager.get(interaction.guild_id or 0)
         if player is None:
-            await interaction.response.send_message("Nic nie jest odtwarzane.", ephemeral=True)
+            await interaction.response.send_message(_NO_PLAYER_MSG, ephemeral=True)
             return
         await player.stop()
         await interaction.response.send_message("⏹️ Zatrzymano.")
@@ -247,15 +252,16 @@ class MusicCog(commands.Cog):
         player = self.bot.manager.get(interaction.guild_id or 0)
         embed = player.now_embed() if player is not None else None
         if embed is None:
-            await interaction.response.send_message("Nic nie jest odtwarzane.", ephemeral=True)
+            await interaction.response.send_message(_NO_PLAYER_MSG, ephemeral=True)
             return
-        await interaction.response.send_message(embed=embed)
+        # Ephemeral — wczesniej kazde /teraz spamowalo nowy embed w kanale.
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="autoplay", description="Włącz/wyłącz AutoPlay (powiązane utwory).")
     async def autoplay(self, interaction: discord.Interaction) -> None:
         player = self.bot.manager.get(interaction.guild_id or 0)
         if player is None:
-            await interaction.response.send_message("Nic nie jest odtwarzane.", ephemeral=True)
+            await interaction.response.send_message(_NO_PLAYER_MSG, ephemeral=True)
             return
         enabled = await player.toggle_autoplay()
         await player.refresh_ui()
@@ -267,7 +273,7 @@ class MusicCog(commands.Cog):
     async def loop(self, interaction: discord.Interaction) -> None:
         player = self.bot.manager.get(interaction.guild_id or 0)
         if player is None:
-            await interaction.response.send_message("Nic nie jest odtwarzane.", ephemeral=True)
+            await interaction.response.send_message(_NO_PLAYER_MSG, ephemeral=True)
             return
         mode = player.cycle_loop()
         await player.refresh_ui()
@@ -284,7 +290,7 @@ class MusicCog(commands.Cog):
     ) -> None:
         player = self.bot.manager.get(interaction.guild_id or 0)
         if player is None:
-            await interaction.response.send_message("Nic nie jest odtwarzane.", ephemeral=True)
+            await interaction.response.send_message(_NO_PLAYER_MSG, ephemeral=True)
             return
         if level is None:
             await interaction.response.send_message(
@@ -299,7 +305,7 @@ class MusicCog(commands.Cog):
     async def shuffle(self, interaction: discord.Interaction) -> None:
         player = self.bot.manager.get(interaction.guild_id or 0)
         if player is None:
-            await interaction.response.send_message("Kolejka pusta.", ephemeral=True)
+            await interaction.response.send_message(_NO_PLAYER_MSG, ephemeral=True)
             return
         player.shuffle()
         await interaction.response.send_message("🔀 Przetasowano.")

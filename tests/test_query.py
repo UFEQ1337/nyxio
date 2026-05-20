@@ -62,3 +62,13 @@ def test_build_search_plain_video_url():
     q, is_pl = build_search(_VIDEO)
     assert q == _VIDEO
     assert is_pl is False
+
+
+def test_build_search_soundcloud_url_passthrough():
+    """SoundCloud URL idzie surowy do Lavalink (sources.soundcloud=true),
+    nie opakowujemy go w ytsearch:."""
+    sc = "https://soundcloud.com/artist/track-name"
+    q, is_pl = build_search(sc)
+    assert q == sc
+    assert is_pl is False
+    assert not q.startswith("ytsearch:")

@@ -97,8 +97,12 @@ class TrackQueue:
         self.loop_mode = LoopMode.NONE
 
     def to_snapshot(self) -> dict[str, object]:
+        # Historia trafia do snapshotu, zeby graceful restart jej nie tracil
+        # (na wypadek przyszlej rozbudowy /wznow o re-resolve historii).
+        # Shuffle nie persystujemy — to per-sesja, swiadoma decyzja.
         return {
             "loop_mode": self.loop_mode.value,
             "current": self._current.to_snapshot() if self._current else None,
             "upcoming": [t.to_snapshot() for t in self._items],
+            "history": [t.to_snapshot() for t in self._history],
         }

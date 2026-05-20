@@ -30,7 +30,9 @@ lavalink:
       channelMix: true
       lowPass: true
     bufferDurationMs: 400
-    youtubePlaylistLoadLimit: 6
+    # 25 = typowa playlista YT bez obcinania; nasz wlasny cap to
+    # NYXIO_MAX_PLAYLIST_ITEMS (100) i to on rzadzi.
+    youtubePlaylistLoadLimit: 25
     playerUpdateInterval: 5
     youtubeSearchEnabled: true
 

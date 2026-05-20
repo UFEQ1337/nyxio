@@ -194,6 +194,8 @@ class GuildPlayer:
                 "❌ Nie udało się odtworzyć utworów — problem z YouTube/Lavalink. "
                 "Spróbuj ponownie za chwilę."
             )
+        except discord.NotFound:
+            log.info("text_channel_gone", guild_id=self.guild_id)
         except discord.HTTPException:
             pass
 
@@ -288,6 +290,8 @@ class GuildPlayer:
         )
         try:
             await self.now_playing_message.edit(embed=embed, view=ControlsView(self))
+        except discord.NotFound:
+            self.now_playing_message = None
         except discord.HTTPException:
             pass
 
@@ -316,6 +320,13 @@ class GuildPlayer:
 
     async def shutdown(self) -> None:
         self._cancel_idle_timeout()
+        # Dokoncz w locie zapis snapshotu do Redis — bez tego graceful restart
+        # (clear_state=False, /wznow) potrafi stracic ostatnie zmiany kolejki.
+        if self._persist_task is not None and not self._persist_task.done():
+            try:
+                await asyncio.shield(self._persist_task)
+            except Exception:  # noqa: BLE001
+                log.warning("persist_on_shutdown_failed", guild_id=self.guild_id)
         try:
             await self.player.disconnect()
         except Exception:  # noqa: BLE001

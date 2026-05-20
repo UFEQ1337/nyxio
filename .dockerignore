@@ -1,0 +1,32 @@
+# Kontekst budowania — wycinamy wszystko czego obraz nie potrzebuje.
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Trwale dane montowane bind-mountem z hosta, nie z obrazu.
+data/
+
+.git/
+.github/
+.gitignore
+.dockerignore
+
+# Testy nie sa potrzebne w runtime image.
+tests/
+
+# Lokalne sekrety/konfigi nigdy do obrazu.
+.env
+.env.*
+!.env.example
+
+# Edytory / OS.
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

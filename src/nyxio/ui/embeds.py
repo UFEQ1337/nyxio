@@ -21,6 +21,23 @@ _LOOP_LABEL = {
 }
 
 
+def _embed_color(state: PlayerState | None) -> discord.Color:
+    """Kolor embeda wg stanu odtwarzania — szybki sygnal wzrokowy.
+
+    Brak state (gdy `/play` woła embed bez przekazania stanu) -> blurple
+    dla wstecznej zgodnosci.
+    """
+    if state is None:
+        return discord.Color.blurple()
+    # Import lazy w runtime przez TYPE_CHECKING — wartosci porownujemy po .value.
+    return {
+        "playing": discord.Color.green(),
+        "paused": discord.Color.gold(),
+        "idle": discord.Color.light_grey(),
+        "stopped": discord.Color.light_grey(),
+    }.get(state.value, discord.Color.blurple())
+
+
 def _dur(track: Track) -> str:
     """Długość z ms (wavelink) -> 'M:SS'. Brak/0 = LIVE."""
     return format_duration(track.length // 1000 if track.length else None)
@@ -50,7 +67,7 @@ def now_playing_embed(
     embed = discord.Embed(
         title="🎶 Teraz odtwarzane",
         description=f"### [{track.title}]({track.uri}) `{_dur(track)}`",
-        color=discord.Color.blurple(),
+        color=_embed_color(state),
     )
     embed.add_field(name="🙋 Zamówił", value=_requester(track))
     embed.add_field(name="📺 Kanał", value=track.author or "—")
@@ -112,7 +129,7 @@ def help_embed() -> discord.Embed:
     embed.add_field(
         name="▶️ Odtwarzanie",
         value=(
-            "`/play <link|fraza>` — dodaj i graj\n"
+            "`/play <link YT/SoundCloud|fraza>` — dodaj i graj\n"
             "`/teraz` — bieżący utwór + pasek postępu\n"
             "`/pause` — pauza/wznowienie\n"
             "`/skip` — następny · `/previous` — poprzedni\n"

@@ -66,9 +66,15 @@ Błędy są izolowane per-serwer.
 
 ```bash
 cp .env.example .env          # ustaw NYXIO_DISCORD_TOKEN i NYXIO_YTCIPHER_TOKEN
+mkdir -p data && sudo chown 1000:1000 data   # kontener bota chodzi jako uid 1000
 docker compose up -d --build
 docker compose logs -f bot    # czekaj na "lavalink_node_ready" i "ready"
 ```
+
+> Bot dziala wewnatrz kontenera jako non-root user (uid 1000). Bind-mount
+> `./data:/app/data` musi miec wlasciciela 1000, inaczej zapis `guild_config.json`
+> rzuci `Permission denied`. Na Windows/WSL `chown` mozna pominac (Docker Desktop
+> robi mapowanie automatycznie); na Linux/VPS trzeba ustawic recznie raz.
 
 Lavalink (JVM) startuje ~20–40 s; bot czeka na jego `healthcheck`
 (`depends_on: service_healthy`) i dodatkowo ponawia połączenie węzła.

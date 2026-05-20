@@ -32,12 +32,24 @@ class NyxioBot(commands.Bot):
         return self.guild_config.get_dj_role_id(guild_id)
 
     async def _connect_lavalink(self) -> None:
-        """Łączy węzeł Lavalink z retry/backoff (JVM może jeszcze wstawać)."""
+        """Łączy węzeł Lavalink z retry/backoff (JVM może jeszcze wstawać).
+
+        Po wyczerpaniu prob rzucamy RuntimeError — bez backendu komendy
+        zwracaja niejasne bledy. Lepiej wywalic setup_hook i pozwolic
+        dockerowi (restart: unless-stopped) zrobic kolejne podejscie.
+        """
         uri = f"http://{self.settings.lavalink_host}:{self.settings.lavalink_port}"
         delay = 3
         for attempt in range(1, 11):
             try:
-                node = wavelink.Node(uri=uri, password=self.settings.lavalink_password)
+                # resume_timeout=60 — wavelink/Lavalink podtrzymuje sesje
+                # przez 60s po rozlaczeniu, dzieki czemu krotki restart
+                # Lavalinka nie urywa odtwarzania.
+                node = wavelink.Node(
+                    uri=uri,
+                    password=self.settings.lavalink_password,
+                    resume_timeout=60,
+                )
                 await wavelink.Pool.connect(client=self, nodes=[node])
                 log.info("lavalink_connected", uri=uri, attempt=attempt)
                 return
@@ -51,6 +63,9 @@ class NyxioBot(commands.Bot):
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
         log.error("lavalink_connect_failed", uri=uri)
+        raise RuntimeError(
+            f"Lavalink niedostepny po 10 probach ({uri}) — przerywam start bota."
+        )
 
     async def setup_hook(self) -> None:
         await self.guild_config.load()
