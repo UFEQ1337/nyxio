@@ -1,0 +1,4 @@
+# Skrypty powloki musza miec konce linii LF — inaczej shebang (#!/bin/sh\r)
+# wywala sie na Linuksie ("no such file or directory").
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
