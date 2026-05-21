@@ -120,6 +120,34 @@ def test_clear_wipes_history(make_track):
     assert q.previous() is False
 
 
+def test_add_next_single_goes_to_front(make_track):
+    q = TrackQueue()
+    a, b, c = make_track("a"), make_track("b"), make_track("c")
+    q.add(a)
+    q.add(b)
+    q.add_next(c)  # c ma zagrac przed a i b
+    assert [t.title for t in q.upcoming] == ["c", "a", "b"]
+
+
+def test_add_next_preserves_playlist_order_when_reversed(make_track):
+    """Tak jak robi to enqueue_many: reversed + add_next zostawia
+    pierwszy utwor playlisty na samym przodzie."""
+    q = TrackQueue()
+    existing = make_track("existing")
+    q.add(existing)
+    playlist = [make_track("p0"), make_track("p1"), make_track("p2")]
+    for t in reversed(playlist):
+        q.add_next(t)
+    assert [t.title for t in q.upcoming] == ["p0", "p1", "p2", "existing"]
+
+
+def test_add_next_enforces_max_size(make_track):
+    q = TrackQueue(max_size=1)
+    q.add(make_track("a"))
+    with pytest.raises(QueueFullError):
+        q.add_next(make_track("b"))
+
+
 def test_snapshot_includes_history(make_track):
     """Snapshot persystuje historie — chronimy przed utrata przy restarcie."""
     q = TrackQueue()

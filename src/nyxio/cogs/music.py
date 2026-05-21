@@ -63,9 +63,11 @@ class MusicCog(commands.Cog):
         )
         return False
 
-    @app_commands.command(name="play", description="Odtwórz utwór z YouTube (link lub fraza).")
-    @app_commands.describe(query="Link do YouTube lub fraza wyszukiwania")
-    async def play(self, interaction: discord.Interaction, query: str) -> None:
+    async def _resolve_and_add(
+        self, interaction: discord.Interaction, query: str, *, to_front: bool
+    ) -> None:
+        """Wspolna logika /play i /playnext. to_front=True wstawia na poczatek
+        kolejki (zagra zaraz po biezacym), zachowujac kolejnosc playlisty."""
         await interaction.response.defer()
         member = interaction.user
         if not isinstance(member, discord.Member):
@@ -89,24 +91,48 @@ class MusicCog(commands.Cog):
         max_items = self.bot.settings.max_playlist_items
         if isinstance(results, wavelink.Playlist):
             playables = list(results.tracks)[:max_items]
-            label = f"➕ Dodano **{len(playables)}** utworów z playlisty."
         else:
             playables = [results[0]]
-            label = f"➕ Dodano: **{results[0].title}**"
 
         try:
             player = await self.bot.manager.get_or_create(member, channel)
-            for playable in playables:
-                track = Track.from_playable(playable, member.id, member.display_name)
-                await player.enqueue(track)
         except NotInVoiceError as exc:
             await interaction.followup.send(f"⚠️ {exc}")
             return
-        except QueueFullError as exc:
-            await interaction.followup.send(f"⚠️ {exc}")
+        tracks = [
+            Track.from_playable(p, member.id, member.display_name) for p in playables
+        ]
+        added = await player.enqueue_many(tracks, to_front=to_front)
+        if added == 0:
+            await interaction.followup.send("⚠️ Kolejka pełna — nic nie dodano.")
             return
 
+        is_playlist = added > 1
+        if to_front:
+            label = (
+                f"⏭️ Dodano **{added}** utworów na początek kolejki."
+                if is_playlist
+                else f"⏭️ Zagra następne: **{tracks[0].title}**"
+            )
+        else:
+            label = (
+                f"➕ Dodano **{added}** utworów z playlisty."
+                if is_playlist
+                else f"➕ Dodano: **{tracks[0].title}**"
+            )
         await interaction.followup.send(label)
+
+    @app_commands.command(name="play", description="Odtwórz utwór z YouTube (link lub fraza).")
+    @app_commands.describe(query="Link do YouTube lub fraza wyszukiwania")
+    async def play(self, interaction: discord.Interaction, query: str) -> None:
+        await self._resolve_and_add(interaction, query, to_front=False)
+
+    @app_commands.command(
+        name="playnext", description="Dodaj utwór na początek kolejki (zagra następny)."
+    )
+    @app_commands.describe(query="Link do YouTube/SoundCloud lub fraza wyszukiwania")
+    async def playnext(self, interaction: discord.Interaction, query: str) -> None:
+        await self._resolve_and_add(interaction, query, to_front=True)
 
     @app_commands.command(name="skip", description="Pomiń bieżący utwór.")
     async def skip(self, interaction: discord.Interaction) -> None:

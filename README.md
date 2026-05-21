@@ -102,6 +102,7 @@ natychmiast w jednej gildii; puste → globalnie (do ~1 h propagacji).
 | Komenda | Opis |
 |---|---|
 | `/play <link\|fraza>` | Dodaj utwór/playlistę i graj (YouTube) |
+| `/playnext <link\|fraza>` | Dodaj na początek kolejki (zagra zaraz po bieżącym) |
 | `/teraz` | Bieżący utwór + pasek postępu |
 | `/pause` | Pauza / wznowienie |
 | `/skip` · `/previous` | Następny / poprzedni (z historii) |

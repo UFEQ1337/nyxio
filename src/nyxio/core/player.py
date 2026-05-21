@@ -96,6 +96,25 @@ class GuildPlayer:
         if not self.player.playing and self.state is not PlayerState.PAUSED:
             await self._advance()
 
+    async def enqueue_many(self, tracks: list[Track], *, to_front: bool = False) -> int:
+        """Dodaj wiele utworow naraz; _advance odpala raz na koncu (inaczej
+        pierwszy wstawiony zacznie grac, zanim wstawimy reszte playlisty).
+        to_front=True wstawia na poczatek kolejki zachowujac kolejnosc.
+        Zwraca ile faktycznie dodano (best-effort przy pelnej kolejce)."""
+        # reversed + add_next zostawia pierwszy utwor na samym przodzie kolejki.
+        seq = list(reversed(tracks)) if to_front else tracks
+        added = 0
+        for track in seq:
+            try:
+                self.queue.add_next(track) if to_front else self.queue.add(track)
+            except QueueFullError:
+                break
+            added += 1
+        self._persist()
+        if not self.player.playing and self.state is not PlayerState.PAUSED:
+            await self._advance()
+        return added
+
     async def skip(self) -> None:
         if self.player.playing or self.player.paused:
             await self.player.stop()  # -> track_end(stopped) -> _advance

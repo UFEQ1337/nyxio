@@ -46,6 +46,12 @@ class TrackQueue:
             raise QueueFullError(f"Kolejka pełna (limit {self._max_size}).")
         self._items.append(track)
 
+    def add_next(self, track: Track) -> None:
+        """Wstaw na poczatek kolejki — zagra zaraz po biezacym (/playnext)."""
+        if len(self._items) >= self._max_size:
+            raise QueueFullError(f"Kolejka pełna (limit {self._max_size}).")
+        self._items.appendleft(track)
+
     def get_next(self) -> Track | None:
         """Zwraca następny utwór respektując tryb loop. None = pusto."""
         if self.loop_mode is LoopMode.TRACK and self._current is not None:

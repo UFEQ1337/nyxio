@@ -130,6 +130,7 @@ def help_embed() -> discord.Embed:
         name="▶️ Odtwarzanie",
         value=(
             "`/play <link YT/SoundCloud|fraza>` — dodaj i graj\n"
+            "`/playnext <link|fraza>` — dodaj na początek (zagra następny)\n"
             "`/teraz` — bieżący utwór + pasek postępu\n"
             "`/pause` — pauza/wznowienie\n"
             "`/skip` — następny · `/previous` — poprzedni\n"
