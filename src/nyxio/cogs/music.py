@@ -15,7 +15,7 @@ from nyxio.ui.embeds import queue_embed
 from nyxio.utils.errors import NotInVoiceError, QueueFullError
 from nyxio.utils.filters import PRESET_NAMES
 from nyxio.utils.permissions import is_allowed
-from nyxio.utils.query import build_search
+from nyxio.utils.query import build_search, is_url
 
 if TYPE_CHECKING:
     from nyxio.bot import NyxioBot
@@ -62,6 +62,33 @@ class MusicCog(commands.Cog):
             ephemeral=True,
         )
         return False
+
+    async def _query_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """Podpowiedzi YouTube w trakcie wpisywania frazy do /play i /playnext.
+
+        Dla linkow i bardzo krotkich fraz nie szukamy (oszczedzamy Lavalink).
+        Bledy/timeouty zwracaja pusta liste — autocomplete nie moze rzucac.
+        """
+        current = current.strip()
+        if is_url(current) or len(current) < 3:
+            return []
+        try:
+            results = await wavelink.Playable.search(f"ytsearch:{current}")
+        except Exception:  # noqa: BLE001
+            return []
+        if not results or isinstance(results, wavelink.Playlist):
+            return []
+        choices: list[app_commands.Choice[str]] = []
+        for track in list(results)[:10]:
+            # name (widoczna etykieta) i value (to co trafi do komendy) max 100 znakow.
+            label = f"{track.title} — {track.author}" if track.author else track.title
+            value = track.uri or track.title
+            choices.append(
+                app_commands.Choice(name=label[:100], value=value[:100])
+            )
+        return choices
 
     async def _resolve_and_add(
         self, interaction: discord.Interaction, query: str, *, to_front: bool
@@ -124,6 +151,7 @@ class MusicCog(commands.Cog):
 
     @app_commands.command(name="play", description="Odtwórz utwór z YouTube (link lub fraza).")
     @app_commands.describe(query="Link do YouTube lub fraza wyszukiwania")
+    @app_commands.autocomplete(query=_query_autocomplete)
     async def play(self, interaction: discord.Interaction, query: str) -> None:
         await self._resolve_and_add(interaction, query, to_front=False)
 
@@ -131,6 +159,7 @@ class MusicCog(commands.Cog):
         name="playnext", description="Dodaj utwór na początek kolejki (zagra następny)."
     )
     @app_commands.describe(query="Link do YouTube/SoundCloud lub fraza wyszukiwania")
+    @app_commands.autocomplete(query=_query_autocomplete)
     async def playnext(self, interaction: discord.Interaction, query: str) -> None:
         await self._resolve_and_add(interaction, query, to_front=True)
 
