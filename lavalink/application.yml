@@ -42,33 +42,29 @@ plugins:
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
-    # Kolejnosc = priorytet. Lista wynika wprost z logow produkcyjnych:
-    #   TVHTML5_SIMPLY -> "Sign in to confirm you're not a bot" (bot-check na
-    #                     IP VPS-a; to on sciagal na nas wykrywanie bota)  -> WYCIETY
+    # Kolejnosc = priorytet.
+    #
+    # UWAGA na kolejnosc przy zmianach: TVHTML5_SIMPLY i IOS niosa WYSZUKIWANIE
+    # bez poTokena. Proba wyciecia ich (bo padaly przy odtwarzaniu) zostawila
+    # sama liste klientow, ktore albo wymagaja poTokena (WEB/MWEB/WEBEMBEDDED),
+    # albo nie obsluguja ytsearch: (MUSIC umie tylko ytmsearch:) — i CALE
+    # wyszukiwanie przestalo dzialac ("Blad wyszukiwania (Lavalink)").
+    #
+    # Diagnoza z logow, do wykorzystania gdy pojawi sie juz poToken:
+    #   TVHTML5_SIMPLY -> przy odtwarzaniu "Sign in to confirm you're not a bot"
     #   IOS            -> "Invalid status code for player api response: 400"
-    #                     (klient ubity po stronie YouTube)                -> WYCIETY
-    #   WEB/WEBEMBEDDED-> "requires login" / "player configuration error",
-    #                     bo pot.token byl PUSTY. Z dzialajacym pot-refresherem
-    #                     to najpewniejsza sciezka, wiec ida na poczatek.
-    #   TV             -> jedyny, ktory przechodzil autoryzacje (OAuth dziala),
-    #                     ale jego strumien wywracal dekoder AAC
-    #                     ("Expected decoding to halt, got: 5") -> ostatnia deska.
+    #   WEB/WEBEMBEDDED-> "requires login" dopoki pot.token jest pusty
+    #   TV             -> jedyny przechodzil autoryzacje (OAuth dziala), ale
+    #                     jego strumien wywracal dekoder AAC lavaplayera
+    #                     ("Expected decoding to halt, got: 5")
     clients:
-      - MUSIC
-      - WEB
-      - MWEB
+      - TVHTML5_SIMPLY
+      - IOS
       - ANDROID_VR
+      - WEB
       - WEBEMBEDDED
+      - MUSIC
       - TV
-    clientOptions:
-      MUSIC:
-        # music.youtube nie obsluguje zwyklych playlist YT.
-        playlistLoading: false
-      TV:
-        # Nie zuzywaj sesji OAuth na wyszukiwanie i playlisty — TV ma byc
-        # wylacznie awaryjnym zrodlem strumienia.
-        searching: false
-        playlistLoading: false
     # Zdalny deszyfrator sygnatur. Lokalny parser w 1.18.1 nie ogarnia
     # najnowszego player-script ("must find sig function") — sygnature
     # liczy serwis yt-cipher (sidecar w docker-compose, siec compose).
