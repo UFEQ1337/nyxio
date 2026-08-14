@@ -17,16 +17,18 @@ zachowanie informacji o autorze (patrz [Licencja](#licencja)).
 
 ## Architektura
 
-Cztery kontenery (`docker-compose.yml`):
+Pięć kontenerów (`docker-compose.yml`):
 
 | Usługa | Rola |
 |---|---|
 | **bot** | Logika: komendy, kolejka, UI, stan per-serwer (Python, lekki ~50 MB RAM) |
 | **lavalink** | Pozyskiwanie i **transkodowanie audio** (JVM); bot sam nie koduje dźwięku |
 | **yt-cipher** | Zdalny deszyfrator sygnatur YouTube — odciąża wtyczkę `youtube-source` przy nowych wersjach player-script |
+| **pot-refresher** | Generuje parę `poToken`/`visitorData` i podmienia ją w Lavalinku przez REST (bez restartu) |
 | **redis** | Trwały snapshot kolejki → wznowienie sesji po restarcie (`/wznow`) |
 
-Zależności startowe: `yt-cipher` → `lavalink` (healthcheck) → `bot`.
+Zależności startowe: `yt-cipher` → `lavalink` (healthcheck) → `bot`,
+`pot-refresher`.
 
 ### Dlaczego Lavalink, a nie yt-dlp/FFmpeg?
 
@@ -186,7 +188,10 @@ Zmienne czytane przez `docker-compose.yml` (Lavalink / YouTube):
 |---|---|---|
 | `NYXIO_YTCIPHER_TOKEN` | `changeme` | Sekret współdzielony Lavalink ↔ `yt-cipher` (ustaw własny) |
 | `NYXIO_YOUTUBE_REFRESH_TOKEN` | — | OAuth YouTube — omija „This video requires login” na VPS (zob. niżej) |
-| `NYXIO_PO_TOKEN` / `NYXIO_VISITOR_DATA` | — | Opcjonalny poToken; zwykle zbędny gdy działa `yt-cipher` + OAuth |
+| `NYXIO_PO_TOKEN` / `NYXIO_VISITOR_DATA` | — | Para poToken; **zostaw puste** — generuje ją `pot-refresher`. Wypełnij tylko w trybie ręcznym |
+| `NYXIO_POT_REFRESH_HOURS` | `6` | Co ile godzin `pot-refresher` generuje nową parę |
+| `NYXIO_POT_GENERATOR_CMD` | (patrz compose) | Polecenie generatora; zmień, gdy w logach serwisu pojawi się `generator_output_unparsed` |
+| `NYXIO_LAVALINK_IMAGE` i pokrewne | ruchome tagi | Przypnij wersje obrazów na produkcji (`:4`, `:master`, `:latest` = niedeterministyczny deploy) |
 
 Wzór: [`.env.example`](.env.example). `.env` i `data/` są w
 `.gitignore` — sekrety nigdy nie trafiają do repo.
@@ -239,10 +244,11 @@ src/nyxio/
 ├── core/             # player (GuildPlayer) · queue · track · manager
 │                     #   · guild_config · restore
 ├── ui/               # embeds (Now Playing/pomoc) · controls (przyciski)
-├── infra/            # logging · state_store (Redis) · supervisor
+├── infra/            # logging · state_store (Redis)
 └── utils/            # query · filters · progressbar · permissions · ...
 lavalink/application.yml   # konfiguracja węzła + wtyczka youtube-source
-docker-compose.yml         # bot + lavalink + yt-cipher + redis
+tools/pot_refresher/       # sidecar: świeży poToken -> POST /youtube
+docker-compose.yml         # bot + lavalink + yt-cipher + pot-refresher + redis
 ```
 
 ---

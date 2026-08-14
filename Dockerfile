@@ -21,10 +21,11 @@ RUN pip install --no-cache-dir . \
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Tani liveness probe: import paczki = process zyje, modul sie laduje.
-# Nie sprawdza polaczenia z Discordem ani Lavalinkiem (te maja wlasne retry).
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD python -c "import nyxio" || exit 1
+# Liveness probe czyta heartbeat pisany przez zywy proces bota (bot.py:
+# HEARTBEAT_PATH). Poprzednia wersja robila `import nyxio` w NOWYM procesie —
+# przechodzila nawet wtedy, gdy bot wisial rozlaczony od Discorda.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import os,sys,time; p='/tmp/nyxio.healthy'; sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p) < 90 else 1)"
 
 # Entrypoint startuje jako root, naprawia wlasciciela /app/data, po czym
 # dropuje do usera 'nyxio' (gosu) i odpala CMD. Brak USER w Dockerfile jest

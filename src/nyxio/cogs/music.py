@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import TYPE_CHECKING
 
 import discord
@@ -25,6 +27,19 @@ if TYPE_CHECKING:
 # "Nic nie jest odtwarzane." / "Kolejka pusta." dla tego samego stanu mylila.
 _NO_PLAYER_MSG = "Nic nie jest odtwarzane."
 
+# Autocomplete odpala się przy KAŻDYM naciśnięciu klawisza — bez cache
+# wpisanie "despacito" to 6 osobnych wyszukań w YouTube. Przy limitach
+# antybotowych na IP VPS-a to realne obciążenie, więc trzymamy krótki cache
+# i wyższy próg długości frazy.
+_AC_CACHE_TTL_S = 60.0
+_AC_CACHE_MAX = 256
+_AC_MIN_QUERY_LEN = 4
+
+# Ile pozycji maksymalnie odtwarzamy w /wznow. Każda to osobne wyszukanie
+# w Lavalinku; przy 500 interakcja wisiała minutami.
+_RESTORE_LIMIT = 50
+_RESTORE_CONCURRENCY = 5
+
 
 def _parse_timestamp(value: str) -> int | None:
     """'mm:ss' / 'h:mm:ss' / 'sekundy' -> ms. None = niepoprawne."""
@@ -45,6 +60,24 @@ def _parse_timestamp(value: str) -> int | None:
 class MusicCog(commands.Cog):
     def __init__(self, bot: NyxioBot) -> None:
         self.bot = bot
+        # fraza -> (timestamp, podpowiedzi)
+        self._ac_cache: dict[str, tuple[float, list[app_commands.Choice[str]]]] = {}
+
+    def _ac_cached(self, key: str) -> list[app_commands.Choice[str]] | None:
+        hit = self._ac_cache.get(key)
+        if hit is None:
+            return None
+        stamp, choices = hit
+        if time.monotonic() - stamp > _AC_CACHE_TTL_S:
+            self._ac_cache.pop(key, None)
+            return None
+        return choices
+
+    def _ac_store(self, key: str, choices: list[app_commands.Choice[str]]) -> None:
+        if len(self._ac_cache) >= _AC_CACHE_MAX:
+            # Prosty przycinacz: usuń najstarszy wpis (dict trzyma kolejność).
+            self._ac_cache.pop(next(iter(self._ac_cache)), None)
+        self._ac_cache[key] = (time.monotonic(), choices)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         """Bramka dostępu stosowana do wszystkich komend tego coga."""
@@ -72,8 +105,12 @@ class MusicCog(commands.Cog):
         Bledy/timeouty zwracaja pusta liste — autocomplete nie moze rzucac.
         """
         current = current.strip()
-        if is_url(current) or len(current) < 3:
+        if is_url(current) or len(current) < _AC_MIN_QUERY_LEN:
             return []
+        key = current.casefold()
+        cached = self._ac_cached(key)
+        if cached is not None:
+            return cached
         try:
             results = await wavelink.Playable.search(f"ytsearch:{current}")
         except Exception:  # noqa: BLE001
@@ -88,6 +125,7 @@ class MusicCog(commands.Cog):
             choices.append(
                 app_commands.Choice(name=label[:100], value=value[:100])
             )
+        self._ac_store(key, choices)
         return choices
 
     async def _resolve_and_add(
@@ -279,27 +317,44 @@ class MusicCog(commands.Cog):
             await interaction.followup.send(f"⚠️ {exc}")
             return
 
-        restored = 0
-        for entry in entries[: self.bot.settings.max_queue_size]:
-            try:
-                results = await wavelink.Playable.search(entry["uri"])
-            except Exception:  # noqa: BLE001
-                continue
+        # Każda pozycja to osobne wyszukanie w Lavalinku. Sekwencyjnie i bez
+        # limitu potrafiło to trwać minutami (i zasypać YouTube żądaniami),
+        # więc: twardy cap + rozwiązywanie równolegle z małym semaforem.
+        limit = min(_RESTORE_LIMIT, self.bot.settings.max_queue_size)
+        selected = entries[:limit]
+        skipped = len(entries) - len(selected)
+        sem = asyncio.Semaphore(_RESTORE_CONCURRENCY)
+
+        async def _resolve(entry: dict[str, object]) -> Track | None:
+            async with sem:
+                try:
+                    results = await wavelink.Playable.search(str(entry["uri"]))
+                except Exception:  # noqa: BLE001
+                    return None
             if not results or isinstance(results, wavelink.Playlist):
-                continue
-            track = Track.from_playable(
-                results[0], 0, entry.get("requested_by", "—")
+                return None
+            return Track.from_playable(
+                results[0], 0, str(entry.get("requested_by", "—"))
             )
+
+        resolved = await asyncio.gather(*(_resolve(e) for e in selected))
+
+        restored = 0
+        for track in resolved:  # kolejność zachowana — gather zwraca po indeksach
+            if track is None:
+                continue
             try:
                 await player.enqueue(track)
             except QueueFullError:
                 break
             restored += 1
         player.queue.loop_mode = restore_loop(snapshot or {})
+        if not restored:
+            await interaction.followup.send("Nie udało się odtworzyć zapisanych utworów.")
+            return
+        tail = f" (pominięto {skipped} — limit {limit})" if skipped > 0 else ""
         await interaction.followup.send(
-            f"♻️ Wznowiono **{restored}** utworów z poprzedniej sesji."
-            if restored
-            else "Nie udało się odtworzyć zapisanych utworów."
+            f"♻️ Wznowiono **{restored}** utworów z poprzedniej sesji.{tail}"
         )
 
     @app_commands.command(name="teraz", description="Pokaż aktualny utwór z paskiem postępu.")

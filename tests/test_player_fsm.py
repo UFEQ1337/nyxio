@@ -151,6 +151,8 @@ async def test_autoplay_queues_related_when_empty(player, make_track, monkeypatc
     last.playable = MagicMock(identifier="vid1")
     player._last_track = last
     player.autoplay = True
+    # AutoPlay wymaga potwierdzenia, że cokolwiek w tej sesji faktycznie zagrało.
+    player._had_successful_start = True
 
     rec = MagicMock(identifier="vid2")
     rec.title = "Powiązany"
@@ -195,7 +197,7 @@ async def test_play_failures_stop_after_limit_and_notify(player, make_track):
 
     await player._advance()
 
-    assert player.player.play.await_count == player_mod._MAX_PLAY_FAILURES
+    assert player.player.play.await_count == player_mod._MAX_CONSECUTIVE_FAILURES
     assert player.state is PlayerState.IDLE
     player.text_channel.send.assert_awaited_once()
 
@@ -247,3 +249,116 @@ async def test_shuffle_and_loop_persist(player, make_track):
     player.cycle_loop()
     await asyncio.sleep(0)
     assert player._manager.state_store.save_queue.await_count >= 1
+
+
+# ---- Pętla błędów odtwarzania (regresja po serii "All clients failed") ---
+
+
+async def test_track_end_load_failed_counts_as_failure(player, make_track):
+    """loadFailed zwiększa trwały licznik — nie resetuje się między utworami."""
+    player.queue.add(make_track("a"))
+    player.queue.add(make_track("b"))
+
+    await player.handle_track_end("loadFailed")
+    assert player._consecutive_failures == 1
+    await player.handle_track_end("TrackEndReason.loadFailed")
+    assert player._consecutive_failures == 2
+
+
+async def test_repeated_load_failures_stop_and_notify(player, make_track):
+    """Trzy nieudane utwory z rzędu -> IDLE + jeden komunikat, koniec pętli."""
+    for name in "abcdef":
+        player.queue.add(make_track(name))
+    player.text_channel.send = AsyncMock()
+
+    for _ in range(3):
+        await player.handle_track_end("loadFailed")
+
+    assert player.state is PlayerState.IDLE
+    player.text_channel.send.assert_awaited_once()
+    # Licznik wyzerowany, żeby ręczne /skip mogło spróbować ponownie.
+    assert player._consecutive_failures == 0
+
+
+async def test_track_start_resets_failure_counter(player, make_track):
+    player.queue.add(make_track("a"))
+    player.queue.get_next()
+    player._consecutive_failures = 2
+
+    await player.handle_track_start()
+
+    assert player._consecutive_failures == 0
+    assert player._had_successful_start is True
+    assert player.state is PlayerState.PLAYING
+
+
+async def test_autoplay_blocked_after_failure(player, make_track, monkeypatch):
+    """Po nieudanym utworze AutoPlay nie dolewa paliwa do pętli."""
+    import nyxio.core.player as player_mod
+
+    last = make_track("last")
+    last.playable = MagicMock(identifier="vid1")
+    player._last_track = last
+    player.autoplay = True
+    player._had_successful_start = True
+    player._consecutive_failures = 1
+
+    search = AsyncMock(return_value=[MagicMock(identifier="vid2")])
+    monkeypatch.setattr(player_mod.wavelink.Playable, "search", search)
+
+    await player._advance()
+
+    search.assert_not_awaited()
+    assert player.state is PlayerState.IDLE
+
+
+async def test_autoplay_blocked_before_any_successful_start(player, make_track, monkeypatch):
+    import nyxio.core.player as player_mod
+
+    last = make_track("last")
+    last.playable = MagicMock(identifier="vid1")
+    player._last_track = last
+    player.autoplay = True
+    player._had_successful_start = False
+
+    search = AsyncMock(return_value=[MagicMock(identifier="vid2")])
+    monkeypatch.setattr(player_mod.wavelink.Playable, "search", search)
+
+    await player._advance()
+
+    search.assert_not_awaited()
+
+
+async def test_advance_does_not_publish_ui_before_track_start(player, make_track):
+    """UI pojawia się dopiero po potwierdzeniu startu przez Lavalink."""
+    player.queue.add(make_track("a"))
+
+    await player._advance()
+
+    player._publish_now_playing.assert_not_awaited()
+
+    await player.handle_track_start()
+    player._publish_now_playing.assert_awaited_once()
+
+
+# ---- Idle timeout nie anuluje sam siebie --------------------------------
+
+
+async def test_idle_timeout_completes_teardown(player, monkeypatch):
+    """_idle_countdown -> teardown -> shutdown nie może zabić własnego taska."""
+    import asyncio
+
+    player._manager.settings.idle_timeout_seconds = 0
+
+    async def _teardown(_guild_id, **_kwargs):
+        await player.shutdown()
+
+    player._manager.teardown = AsyncMock(side_effect=_teardown)
+    player.now_playing_message = None
+
+    player._arm_idle_timeout()
+    await asyncio.sleep(0.05)
+
+    player._manager.teardown.assert_awaited_once()
+    # Kluczowe: shutdown dobiegł do końca, czyli bot faktycznie się rozłączył.
+    player.player.disconnect.assert_awaited_once()

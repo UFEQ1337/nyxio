@@ -48,6 +48,11 @@ def _total(ms: int) -> str:
     return format_duration(ms // 1000) if ms > 0 else "—"
 
 
+def _short(title: str, limit: int = 60) -> str:
+    """Skraca tytuł, żeby 10 pozycji zmieściło się w limicie pola embeda."""
+    return title if len(title) <= limit else title[: limit - 1] + "…"
+
+
 def _requester(track: Track) -> str:
     if track.requested_by_id:
         return f"<@{track.requested_by_id}>"
@@ -109,10 +114,12 @@ def queue_embed(queue: TrackQueue, page: int = 1) -> discord.Embed:
     if items:
         offset = (page - 1) * 10
         lines = [
-            f"`{offset + i + 1}.` {t.title} ({_dur(t)})"
+            f"`{offset + i + 1}.` {_short(t.title)} ({_dur(t)})"
             for i, t in enumerate(items)
         ]
-        embed.add_field(name="Następne", value="\n".join(lines), inline=False)
+        # Twardy limit pola embeda to 1024 znaki — 10 długich tytułów YouTube
+        # potrafiło go przekroczyć i całe /queue kończyło się błędem 400.
+        embed.add_field(name="Następne", value="\n".join(lines)[:1024], inline=False)
     else:
         embed.add_field(name="Następne", value="*pusto*", inline=False)
     total = _total(queue.total_length_ms)
@@ -141,7 +148,7 @@ def help_embed() -> discord.Embed:
     embed.add_field(
         name="📜 Kolejka",
         value=(
-            "`/queue [str]` — pokaż kolejkę\n"
+            "`/queue [strona]` — pokaż kolejkę\n"
             "`/loop` — pętla (off/utwór/kolejka)\n"
             "`/shuffle` — przetasuj · `/wznow` — przywróć sesję"
         ),

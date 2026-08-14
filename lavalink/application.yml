@@ -42,18 +42,33 @@ plugins:
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
-    # Kolejnosc = priorytet. Wg tabeli youtube-source: tylko WEB/WEBEMBEDDED
-    # uzywaja poTokena; TV jest jedynym klientem OAuth, ale NIE laduje wideo
-    # (tylko playback). IOS/TVHTML5_SIMPLY/ANDROID_VR laduja wideo bez POT i
-    # bez OAuth — proba zanim padnie na WEB+POT. TV na koncu = playback OAuth.
+    # Kolejnosc = priorytet. Lista wynika wprost z logow produkcyjnych:
+    #   TVHTML5_SIMPLY -> "Sign in to confirm you're not a bot" (bot-check na
+    #                     IP VPS-a; to on sciagal na nas wykrywanie bota)  -> WYCIETY
+    #   IOS            -> "Invalid status code for player api response: 400"
+    #                     (klient ubity po stronie YouTube)                -> WYCIETY
+    #   WEB/WEBEMBEDDED-> "requires login" / "player configuration error",
+    #                     bo pot.token byl PUSTY. Z dzialajacym pot-refresherem
+    #                     to najpewniejsza sciezka, wiec ida na poczatek.
+    #   TV             -> jedyny, ktory przechodzil autoryzacje (OAuth dziala),
+    #                     ale jego strumien wywracal dekoder AAC
+    #                     ("Expected decoding to halt, got: 5") -> ostatnia deska.
     clients:
-      - TVHTML5_SIMPLY
-      - IOS
-      - ANDROID_VR
-      - WEB
-      - WEBEMBEDDED
       - MUSIC
+      - WEB
+      - MWEB
+      - ANDROID_VR
+      - WEBEMBEDDED
       - TV
+    clientOptions:
+      MUSIC:
+        # music.youtube nie obsluguje zwyklych playlist YT.
+        playlistLoading: false
+      TV:
+        # Nie zuzywaj sesji OAuth na wyszukiwanie i playlisty — TV ma byc
+        # wylacznie awaryjnym zrodlem strumienia.
+        searching: false
+        playlistLoading: false
     # Zdalny deszyfrator sygnatur. Lokalny parser w 1.18.1 nie ogarnia
     # najnowszego player-script ("must find sig function") — sygnature
     # liczy serwis yt-cipher (sidecar w docker-compose, siec compose).
@@ -66,7 +81,11 @@ plugins:
     oauth:
       enabled: true
       refreshToken: "${YOUTUBE_REFRESH_TOKEN:}"
-    # Technologia poToken wymuszona z pliku .env
+    # poToken/visitorData. Te wartosci to tylko stan STARTOWY — para wygasa po
+    # kilku-kilkunastu godzinach, a plugin czyta ten plik wylacznie przy
+    # starcie. Swiezosc utrzymuje serwis pot-refresher, ktory wysyla nowa pare
+    # przez REST (POST /youtube) bez restartu Lavalinka.
+    # Puste = polegamy w calosci na pot-refresherze.
     pot:
       token: "${YOUTUBE_PO_TOKEN:}"
       visitorData: "${YOUTUBE_VISITOR_DATA:}"

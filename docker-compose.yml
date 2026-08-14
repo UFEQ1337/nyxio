@@ -1,8 +1,17 @@
+# Wspólna polityka logów. Bez tego jedna seria błędów YouTube (kilkanaście kB
+# stack trace'u z Javy na każdy nieudany utwór) potrafi zapchać dysk VPS-a.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   bot:
     build: .
     env_file: .env
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       # Trwała konfiguracja per-serwer (głośność, rola DJ, AutoPlay).
       # Bez tego ustawienia ginęły przy każdym przebudowaniu kontenera.
@@ -14,15 +23,21 @@ services:
         condition: service_healthy
 
   lavalink:
-    image: ghcr.io/lavalink-devs/lavalink:4
+    # Tag ruchomy = niedeterministyczny deploy: `docker compose pull` może
+    # podmienić działającą wersję na zepsutą. Przypnij konkretną wersję albo
+    # digest w .env, np.
+    #   NYXIO_LAVALINK_IMAGE=ghcr.io/lavalink-devs/lavalink:4.0.8
+    image: ${NYXIO_LAVALINK_IMAGE:-ghcr.io/lavalink-devs/lavalink:4}
     restart: unless-stopped
+    logging: *default-logging
     environment:
       # Podstawiane w application.yml jako ${LAVALINK_SERVER_PASSWORD}.
       - LAVALINK_SERVER_PASSWORD=${NYXIO_LAVALINK_PASSWORD:-youshallnotpass}
       # OAuth youtube-source. Puste przy 1. starcie (device-login w logach),
       # potem wklej token do .env jako NYXIO_YOUTUBE_REFRESH_TOKEN.
       - YOUTUBE_REFRESH_TOKEN=${NYXIO_YOUTUBE_REFRESH_TOKEN:-}
-      # Obsluga poToken z pliku .env (zmienne NYXIO_PO_TOKEN i NYXIO_VISITOR_DATA)
+      # Para poToken/visitorData. Na bieżąco podmienia ją serwis pot-refresher
+      # przez REST (POST /youtube) — te zmienne są tylko wartością startową.
       - YOUTUBE_PO_TOKEN=${NYXIO_PO_TOKEN:-}
       - YOUTUBE_VISITOR_DATA=${NYXIO_VISITOR_DATA:-}
       # Haslo do zdalnego cipher (yt-cipher). Musi byc takie samo jak API_TOKEN
@@ -56,14 +71,44 @@ services:
   # function") — yt-cipher liczy sygnature po stronie serwera. Bez portu
   # na hosta: Lavalink siega po sieci compose (http://yt-cipher:8001).
   yt-cipher:
-    image: ghcr.io/kikkia/yt-cipher:master
+    image: ${NYXIO_YTCIPHER_IMAGE:-ghcr.io/kikkia/yt-cipher:master}
     restart: unless-stopped
+    logging: *default-logging
     environment:
       - API_TOKEN=${NYXIO_YTCIPHER_TOKEN:-changeme}
 
-  redis:
-    image: redis:7-alpine
+  # Generuje parę poToken/visitorData i wpycha ją do Lavalinka przez REST.
+  # Bez świeżego poTokena klienci WEB/WEBEMBEDDED zwracają "This video
+  # requires login" / "Video player configuration error" — dokładnie to, co
+  # widać było w logach. Para wygasa, więc statyczny wpis w .env nie wystarcza.
+  pot-refresher:
+    build:
+      context: ./tools/pot_refresher
+      args:
+        POT_BASE_IMAGE: ${NYXIO_POT_BASE_IMAGE:-ghcr.io/iv-org/youtube-trusted-session-generator:latest}
     restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - LAVALINK_URL=http://lavalink:2333
+      - LAVALINK_PASSWORD=${NYXIO_LAVALINK_PASSWORD:-youshallnotpass}
+      - YOUTUBE_REFRESH_TOKEN=${NYXIO_YOUTUBE_REFRESH_TOKEN:-}
+      - POT_REFRESH_HOURS=${NYXIO_POT_REFRESH_HOURS:-6}
+      # Polecenie generatora. Jeśli obraz bazowy zmieni ścieżkę/entrypoint,
+      # serwis wypisze w logach 'generator_output_unparsed' wraz z ogonem
+      # wyjścia — wtedy popraw tę zmienną w .env (NYXIO_POT_GENERATOR_CMD).
+      - POT_GENERATOR_CMD=${NYXIO_POT_GENERATOR_CMD:-python /app/potoken_generator/main.py --oneshot}
+      # Tryb ręczny: wypełnij obie zmienne, a generator nie będzie uruchamiany
+      # (serwis dopilnuje tylko, by Lavalink miał tę parę po każdym restarcie).
+      - POT_TOKEN=${NYXIO_PO_TOKEN:-}
+      - POT_VISITOR_DATA=${NYXIO_VISITOR_DATA:-}
+    depends_on:
+      lavalink:
+        condition: service_healthy
+
+  redis:
+    image: ${NYXIO_REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    logging: *default-logging
     volumes:
       - redis-data:/data
 

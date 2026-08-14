@@ -20,10 +20,18 @@ class ControlsView(discord.ui.View):
     def __init__(self, player: GuildPlayer) -> None:
         super().__init__(timeout=None)
         self._player = player
-        # Przycisk AutoPlay odzwierciedla aktualny stan kolorem.
+        self.sync()
+
+    def sync(self) -> None:
+        """Dociąga wygląd przycisków do stanu gracza.
+
+        Widok jest jeden na gracza (patrz GuildPlayer._view) i wędruje między
+        kolejnymi wiadomościami „Teraz odtwarzane", więc styl trzeba odświeżyć,
+        a nie tworzyć nowy obiekt.
+        """
         self.autoplay_btn.style = (
             discord.ButtonStyle.success
-            if player.autoplay
+            if self._player.autoplay
             else discord.ButtonStyle.secondary
         )
 
@@ -136,11 +144,9 @@ class ControlsView(discord.ui.View):
 
     @discord.ui.button(label="AutoPlay", emoji="▶️", row=2)
     async def autoplay_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button[ControlsView]
+        self, interaction: discord.Interaction, _: discord.ui.Button[ControlsView]
     ) -> None:
         await interaction.response.defer()
-        enabled = await self._player.toggle_autoplay()
-        button.style = (
-            discord.ButtonStyle.success if enabled else discord.ButtonStyle.secondary
-        )
+        await self._player.toggle_autoplay()
+        # Styl ustawia sync() wołane z refresh_ui -> _view().
         await self._player.refresh_ui()

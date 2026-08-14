@@ -9,6 +9,12 @@ import structlog
 
 def configure_logging() -> None:
     logging.basicConfig(format="%(message)s", level=logging.INFO)
+    # wavelink loguje KAŻDY TrackException razem z pełnym stack tracem z Javy
+    # (kilkanaście kB), a my logujemy własną, skróconą wersję w
+    # NyxioBot.on_wavelink_track_exception. Przy serii błędów YouTube te
+    # duplikaty potrafiły zapchać dysk VPS-a w kilka godzin.
+    # Nazwa loggera pochodzi z wavelink/websocket.py: getLogger("TrackException").
+    logging.getLogger("TrackException").setLevel(logging.CRITICAL)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

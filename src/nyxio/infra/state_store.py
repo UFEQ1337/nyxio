@@ -14,6 +14,10 @@ from nyxio.infra.logging import get_logger
 
 log = get_logger("state_store")
 
+# Snapshot służy do /wznow po restarcie, a nie do archiwizacji. Bez TTL klucze
+# gildii, które raz zagrały i zniknęły, zostawały w Redisie na zawsze.
+_SNAPSHOT_TTL_S = 7 * 24 * 3600
+
 
 class StateStore:
     def __init__(self, redis_url: str | None) -> None:
@@ -37,7 +41,11 @@ class StateStore:
         if self._client is None:
             return
         try:
-            await self._client.set(f"nyxio:queue:{guild_id}", json.dumps(snapshot))
+            await self._client.set(
+                f"nyxio:queue:{guild_id}",
+                json.dumps(snapshot),
+                ex=_SNAPSHOT_TTL_S,
+            )
         except Exception:  # noqa: BLE001
             log.exception("redis_save_failed", guild_id=guild_id)
 

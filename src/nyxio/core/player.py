@@ -22,16 +22,25 @@ from nyxio.utils.filters import apply_filter_preset
 
 if TYPE_CHECKING:
     from nyxio.core.manager import PlayerManager
+    from nyxio.ui.controls import ControlsView
 
 log = get_logger("player")
 
 # Reasony końca utworu, po których NIE przewijamy dalej (sami wywołaliśmy play).
 _NO_ADVANCE = {"replaced", "cleanup"}
 
-# Ile kolejnych nieudanych prób odtworzenia tolerujemy w jednym przejściu
-# kolejki, zanim odpuścimy i powiadomimy kanał (chroni przed zjedzeniem
-# całej kolejki, gdy padł łańcuch YouTube/Lavalink).
-_MAX_PLAY_FAILURES = 3
+# Reasony oznaczające, że utwór NIE zagrał (błąd źródła/dekodera). Lavalink
+# wysyła je jako TrackEndEvent po TrackExceptionEvent — liczymy je jako porażki.
+_FAILURE_REASONS = {"loadfailed", "stuck"}
+
+# Ile KOLEJNYCH nieudanych utworów tolerujemy, zanim odpuścimy i powiadomimy
+# kanał. Licznik jest polem instancji (nie zmienną lokalną _advance), bo błąd
+# odtwarzania przychodzi asynchronicznie — zdarzeniem, już po tym jak
+# player.play() zwrócił sukces. Zeruje go dopiero potwierdzony start utworu.
+_MAX_CONSECUTIVE_FAILURES = 3
+
+# Ile powiązanych utworów dokłada jeden przebieg AutoPlay.
+_AUTOPLAY_BATCH = 5
 
 
 class PlayerState(enum.Enum):
@@ -64,8 +73,20 @@ class GuildPlayer:
         # Serializuje _advance: zdarzenia track_end i bezpośrednie wywołania
         # (skip/previous/enqueue) nie mogą równolegle wołać queue.get_next().
         self._advance_lock = asyncio.Lock()
-        # Trzymamy referencję do fire-and-forget snapshotu, by GC go nie ubił.
-        self._persist_task: asyncio.Task[None] | None = None
+        # Trzymamy referencje do fire-and-forget snapshotów, by GC ich nie ubił.
+        # Zbiór, nie pojedyncze pole — inaczej kolejny _persist() nadpisywał
+        # referencję i poprzedni, jeszcze trwający zapis tracił jedynego
+        # właściciela (dokładnie to, czemu miało zapobiegać).
+        self._persist_tasks: set[asyncio.Task[None]] = set()
+        # Liczba kolejnych utworów, które nie zagrały (loadFailed/stuck).
+        self._consecutive_failures = 0
+        # Czy w tej sesji cokolwiek faktycznie zagrało. AutoPlay bez tego
+        # potrafił budować mini-radio z utworu, który sam nigdy nie ruszył.
+        self._had_successful_start = False
+        # Jedna instancja widoku na gracza — discord.py trzyma widoki z
+        # timeout=None w rejestrze bez końca, więc nowy obiekt przy każdym
+        # odświeżeniu UI był wyciekiem pamięci.
+        self._controls_view: ControlsView | None = None
 
     # ---- Właściwości pomocnicze -------------------------------------------
 
@@ -171,18 +192,66 @@ class GuildPlayer:
 
     # ---- Sterowanie zdarzeniowe -------------------------------------------
 
+    async def handle_track_start(self) -> None:
+        """Lavalink potwierdził, że utwór faktycznie ruszył.
+
+        Dopiero tutaj zerujemy licznik porażek i publikujemy „Teraz
+        odtwarzane" — player.play() zwraca sukces samym przyjęciem żądania
+        przez Lavalink, więc wcześniej UI pokazywało też utwory, które
+        w rzeczywistości nigdy nie zagrały.
+        """
+        self._consecutive_failures = 0
+        self._had_successful_start = True
+        self.state = PlayerState.PLAYING
+        track = self.queue.current
+        if track is not None:
+            await self._publish_now_playing(track)
+
+    def note_failure(self, reason: str = "stuck") -> None:
+        """Odnotuj utwór, który nie zagrał (wołane też z handlera stuck)."""
+        self._consecutive_failures += 1
+        log.warning(
+            "track_failed",
+            guild_id=self.guild_id,
+            reason=reason,
+            consecutive=self._consecutive_failures,
+        )
+
     async def handle_track_end(self, reason: str) -> None:
         norm = reason.split(".")[-1].lower()  # 'TrackEndReason.finished' -> 'finished'
         if norm in _NO_ADVANCE:
             return
+        if norm in _FAILURE_REASONS:
+            self.note_failure(norm)
         await self._advance()
+
+    def _can_autoplay(self) -> bool:
+        """AutoPlay tylko gdy łańcuch odtwarzania faktycznie działa.
+
+        Bez tego warunku pusta po serii błędów kolejka była w kółko
+        dopełniana Mixem z niegrywalnego wideo — bot sam generował setki
+        żądań do YouTube i nakręcał wykrywanie bota.
+        """
+        return self.autoplay and self._had_successful_start and self._consecutive_failures == 0
 
     async def _advance(self) -> None:
         async with self._advance_lock:
-            failures = 0
             while True:
+                if self._consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
+                    log.warning(
+                        "playback_failure_limit",
+                        guild_id=self.guild_id,
+                        failures=self._consecutive_failures,
+                    )
+                    # Zerujemy, żeby ręczne /skip albo /play mogło spróbować
+                    # ponownie — ale kolejki dalej sami nie przewijamy.
+                    self._consecutive_failures = 0
+                    self.state = PlayerState.IDLE
+                    self._arm_idle_timeout()
+                    await self._notify_playback_error()
+                    return
                 track = self.queue.get_next()
-                if track is None and self.autoplay and await self._try_autoplay():
+                if track is None and self._can_autoplay() and await self._try_autoplay():
                     track = self.queue.get_next()
                 if track is None:
                     self.state = PlayerState.IDLE
@@ -195,16 +264,10 @@ class GuildPlayer:
                     log.exception(
                         "play_failed", guild_id=self.guild_id, title=track.title
                     )
-                    failures += 1
-                    if failures >= _MAX_PLAY_FAILURES:
-                        self.state = PlayerState.IDLE
-                        self._arm_idle_timeout()
-                        await self._notify_playback_error()
-                        return
+                    self._consecutive_failures += 1
                     continue  # spróbuj kolejny utwór z kolejki
                 self._last_track = track
                 self.state = PlayerState.PLAYING
-                await self._publish_now_playing(track)
                 return
 
     async def _notify_playback_error(self) -> None:
@@ -246,13 +309,13 @@ class GuildPlayer:
             if getattr(pl, "identifier", None) == vid:
                 continue  # pomiń ten sam utwór
             try:
-                self.queue.add(
-                    Track.from_playable(pl, last.requested_by_id, "AutoPlay")
-                )
+                # requested_by_id=0 — inaczej embed oznaczał pierwotnego
+                # zamawiającego, a etykieta "AutoPlay" nigdy się nie pokazywała.
+                self.queue.add(Track.from_playable(pl, 0, "AutoPlay"))
             except QueueFullError:
                 break
             added += 1
-            if added >= 5:
+            if added >= _AUTOPLAY_BATCH:
                 break
         if added:
             log.info("autoplay_queued", guild_id=self.guild_id, count=added)
@@ -265,9 +328,17 @@ class GuildPlayer:
         self._idle_task = asyncio.create_task(self._idle_countdown())
 
     def _cancel_idle_timeout(self) -> None:
-        if self._idle_task is not None:
-            self._idle_task.cancel()
-            self._idle_task = None
+        task = self._idle_task
+        self._idle_task = None
+        if task is None:
+            return
+        # Nie anuluj samego siebie: _idle_countdown -> teardown -> shutdown ->
+        # _cancel_idle_timeout wołane jest Z WNĘTRZA tego taska. cancel() na
+        # bieżącym tasku dostarczał CancelledError przy najbliższym await w
+        # shutdown(), więc bot po timeoucie zostawał na kanale głosowym.
+        if task is asyncio.current_task():
+            return
+        task.cancel()
 
     async def _idle_countdown(self) -> None:
         try:
@@ -279,23 +350,35 @@ class GuildPlayer:
 
     # ---- UI ---------------------------------------------------------------
 
-    async def _publish_now_playing(self, track: Track) -> None:
+    def _view(self) -> ControlsView:
+        """Jedna instancja ControlsView na gracza, zsynchronizowana ze stanem."""
         from nyxio.ui.controls import ControlsView
+
+        if self._controls_view is None:
+            self._controls_view = ControlsView(self)
+        self._controls_view.sync()
+        return self._controls_view
+
+    async def _publish_now_playing(self, track: Track) -> None:
         from nyxio.ui.embeds import now_playing_embed
 
         embed = now_playing_embed(
-            track, self.queue, volume_pct=self.volume_pct, autoplay=self.autoplay
+            track,
+            self.queue,
+            state=self.state,
+            volume_pct=self.volume_pct,
+            autoplay=self.autoplay,
         )
-        view = ControlsView(self)
         try:
             if self.now_playing_message is not None:
                 await self.now_playing_message.delete()
         except discord.HTTPException:
             pass
-        self.now_playing_message = await self.text_channel.send(embed=embed, view=view)
+        self.now_playing_message = await self.text_channel.send(
+            embed=embed, view=self._view()
+        )
 
     async def refresh_ui(self) -> None:
-        from nyxio.ui.controls import ControlsView
         from nyxio.ui.embeds import now_playing_embed
 
         if self.now_playing_message is None or self.queue.current is None:
@@ -308,7 +391,7 @@ class GuildPlayer:
             autoplay=self.autoplay,
         )
         try:
-            await self.now_playing_message.edit(embed=embed, view=ControlsView(self))
+            await self.now_playing_message.edit(embed=embed, view=self._view())
         except discord.NotFound:
             self.now_playing_message = None
         except discord.HTTPException:
@@ -332,20 +415,28 @@ class GuildPlayer:
     # ---- Pomocnicze -------------------------------------------------------
 
     def _persist(self) -> None:
-        # Referencję trzymamy w polu, żeby GC nie ubił taska przed zapisem.
-        self._persist_task = asyncio.create_task(
+        # Referencje trzymamy w zbiorze, żeby GC nie ubił taska przed zapisem.
+        task = asyncio.create_task(
             self._manager.state_store.save_queue(self.guild_id, self.queue.to_snapshot())
         )
+        self._persist_tasks.add(task)
+        task.add_done_callback(self._persist_tasks.discard)
 
     async def shutdown(self) -> None:
         self._cancel_idle_timeout()
-        # Dokoncz w locie zapis snapshotu do Redis — bez tego graceful restart
+        # Dokoncz w locie zapisy snapshotu do Redis — bez tego graceful restart
         # (clear_state=False, /wznow) potrafi stracic ostatnie zmiany kolejki.
-        if self._persist_task is not None and not self._persist_task.done():
+        pending = [t for t in self._persist_tasks if not t.done()]
+        if pending:
             try:
-                await asyncio.shield(self._persist_task)
+                await asyncio.shield(asyncio.gather(*pending, return_exceptions=True))
             except Exception:  # noqa: BLE001
                 log.warning("persist_on_shutdown_failed", guild_id=self.guild_id)
+        if self._controls_view is not None:
+            # Bez stop() widok z timeout=None zostaje w rejestrze discord.py
+            # na zawsze — po dobie grania to tysiące żywych obiektów.
+            self._controls_view.stop()
+            self._controls_view = None
         try:
             await self.player.disconnect()
         except Exception:  # noqa: BLE001
