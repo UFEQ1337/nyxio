@@ -128,6 +128,20 @@ class NyxioBot(commands.Bot):
         if gplayer is not None:
             await gplayer.handle_track_start()
 
+    async def on_wavelink_player_update(
+        self, payload: wavelink.PlayerUpdateEventPayload
+    ) -> None:
+        """Rosnąca pozycja = audio faktycznie płynie.
+
+        Jedyny wiarygodny sygnał sukcesu: TrackStartEvent przychodzi także dla
+        utworów, które zaraz potem padają z loadFailed.
+        """
+        if payload.player is None or payload.player.guild is None:
+            return
+        gplayer = self.manager.get(payload.player.guild.id)
+        if gplayer is not None:
+            gplayer.handle_progress(payload.position)
+
     async def on_wavelink_track_end(
         self, payload: wavelink.TrackEndEventPayload
     ) -> None:

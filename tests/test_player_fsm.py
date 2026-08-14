@@ -280,16 +280,62 @@ async def test_repeated_load_failures_stop_and_notify(player, make_track):
     assert player._consecutive_failures == 0
 
 
-async def test_track_start_resets_failure_counter(player, make_track):
+async def test_track_start_does_not_reset_failure_counter(player, make_track):
+    """TrackStart przychodzi takze dla utworow, ktore zaraz padna — nie moze
+    liczyc sie za sukces (regresja: 'consecutive: 1' w kolko na produkcji)."""
     player.queue.add(make_track("a"))
     player.queue.get_next()
     player._consecutive_failures = 2
 
     await player.handle_track_start()
 
+    assert player._consecutive_failures == 2
+    assert player._had_successful_start is False
+    assert player.state is PlayerState.PLAYING
+
+
+async def test_progress_confirms_playback(player):
+    player._consecutive_failures = 2
+
+    player.handle_progress(5_000)
+
     assert player._consecutive_failures == 0
     assert player._had_successful_start is True
-    assert player.state is PlayerState.PLAYING
+
+
+async def test_zero_position_does_not_confirm_playback(player):
+    player._consecutive_failures = 2
+
+    player.handle_progress(0)
+
+    assert player._consecutive_failures == 2
+    assert player._had_successful_start is False
+
+
+async def test_finished_track_confirms_playback(player, make_track):
+    player.queue.add(make_track("a"))
+    player._consecutive_failures = 2
+
+    await player.handle_track_end("finished")
+
+    assert player._consecutive_failures == 0
+    assert player._had_successful_start is True
+
+
+async def test_start_failure_cycles_still_hit_limit(player, make_track):
+    """Dokladna sekwencja z produkcji: kazdy nieudany utwor daje
+    TrackStart -> TrackException -> TrackEnd(loadFailed). Bez zadnego
+    faktycznego odtwarzania limit MUSI zadzialac."""
+    for name in "abcdefghij":
+        player.queue.add(make_track(name))
+    player.text_channel.send = AsyncMock()
+
+    for _ in range(3):
+        await player.handle_track_start()  # Lavalink zaczyna obsluge utworu
+        await player.handle_track_end("loadFailed")  # ...i utwor pada
+
+    assert player.state is PlayerState.IDLE
+    player.text_channel.send.assert_awaited_once()
 
 
 async def test_autoplay_blocked_after_failure(player, make_track, monkeypatch):

@@ -42,6 +42,10 @@ _MAX_CONSECUTIVE_FAILURES = 3
 # Ile powiązanych utworów dokłada jeden przebieg AutoPlay.
 _AUTOPLAY_BATCH = 5
 
+# Od jakiej pozycji w utworze uznajemy odtwarzanie za potwierdzone. Lavalink
+# przysyła pozycję co `playerUpdateInterval` sekund (application.yml).
+_PLAYBACK_CONFIRMED_MS = 1000
+
 
 class PlayerState(enum.Enum):
     IDLE = "idle"
@@ -193,19 +197,32 @@ class GuildPlayer:
     # ---- Sterowanie zdarzeniowe -------------------------------------------
 
     async def handle_track_start(self) -> None:
-        """Lavalink potwierdził, że utwór faktycznie ruszył.
+        """Lavalink zaczął obsługiwać utwór — publikujemy UI.
 
-        Dopiero tutaj zerujemy licznik porażek i publikujemy „Teraz
-        odtwarzane" — player.play() zwraca sukces samym przyjęciem żądania
-        przez Lavalink, więc wcześniej UI pokazywało też utwory, które
-        w rzeczywistości nigdy nie zagrały.
+        UWAGA: to zdarzenie NIE jest dowodem, że cokolwiek zagrało. Lavalink
+        wysyła je, zanim lavaplayer rozwiąże format strumienia, więc dostajemy
+        je także dla utworów, które zaraz potem poleca z loadFailed. Zerowanie
+        licznika porażek w tym miejscu kasowało go między kolejnymi bledami
+        ("consecutive": 1 w kółko) i pętla wracała. Sukces potwierdza dopiero
+        handle_progress().
         """
-        self._consecutive_failures = 0
-        self._had_successful_start = True
         self.state = PlayerState.PLAYING
         track = self.queue.current
         if track is not None:
             await self._publish_now_playing(track)
+
+    def handle_progress(self, position_ms: int) -> None:
+        """Pozycja w utworze rośnie — czyli audio faktycznie płynie.
+
+        To jedyny wiarygodny sygnał, że łańcuch YouTube -> Lavalink -> Discord
+        działa. Dopiero on zeruje licznik porażek i odblokowuje AutoPlay.
+        """
+        if position_ms <= _PLAYBACK_CONFIRMED_MS:
+            return
+        if not self._had_successful_start or self._consecutive_failures:
+            log.info("playback_confirmed", guild_id=self.guild_id)
+        self._consecutive_failures = 0
+        self._had_successful_start = True
 
     def note_failure(self, reason: str = "stuck") -> None:
         """Odnotuj utwór, który nie zagrał (wołane też z handlera stuck)."""
@@ -223,6 +240,10 @@ class GuildPlayer:
             return
         if norm in _FAILURE_REASONS:
             self.note_failure(norm)
+        elif norm == "finished":
+            # Utwór dograł do końca — mocniejszy dowód niż pozycja > 1 s.
+            self._consecutive_failures = 0
+            self._had_successful_start = True
         await self._advance()
 
     def _can_autoplay(self) -> bool:
