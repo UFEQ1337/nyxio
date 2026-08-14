@@ -96,7 +96,8 @@ services:
     environment:
       - LAVALINK_URL=http://lavalink:2333
       - LAVALINK_PASSWORD=${NYXIO_LAVALINK_PASSWORD:-youshallnotpass}
-      - YOUTUBE_REFRESH_TOKEN=${NYXIO_YOUTUBE_REFRESH_TOKEN:-}
+      # Celowo BEZ YOUTUBE_REFRESH_TOKEN — Lavalink loguje cale ciala zadan,
+      # wiec dosylanie tokenu OAuth wynosilo go do logow w plaintekscie.
       - POT_REFRESH_HOURS=${NYXIO_POT_REFRESH_HOURS:-6}
       # Puste = brak generowania w kontenerze (tryb dosyłacza). Ustaw razem
       # z NYXIO_POT_BASE_IMAGE, jeśli chcesz generować parę automatycznie;

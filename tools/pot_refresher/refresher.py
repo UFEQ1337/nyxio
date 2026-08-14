@@ -143,12 +143,13 @@ def push(visitor: str, token: str) -> bool:
     """Wysyła parę do Lavalinka (POST /youtube). True = przyjęte."""
     base = os.environ.get("LAVALINK_URL", "http://lavalink:2333").rstrip("/")
     password = os.environ.get("LAVALINK_PASSWORD", "")
+    # NIE wysyłamy tu refreshTokena. Lavalink loguje cale cialo zadania POST
+    # (RequestLoggingFilter), wiec kazdy push ladowal token OAuth w plaintekscie
+    # do logow kontenera. Token i tak trafia do pluginu ze zmiennej srodowiskowej
+    # przy starcie — dosylanie go nic nie wnosilo, a wynosilo sekret.
+    # (poToken/visitorData tez sa logowane, dlatego w application.yml wylaczamy
+    #  includePayload dla logu zadan.)
     body: dict[str, object] = {"poToken": token, "visitorData": visitor}
-    refresh_token = os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
-    if refresh_token:
-        body["refreshToken"] = refresh_token
-        # Bez tego plugin przy każdym POST ponawia pełną inicjalizację OAuth.
-        body["skipInitialization"] = True
 
     request = urllib.request.Request(
         f"{base}/youtube",

@@ -4,7 +4,7 @@ server:
 
 lavalink:
   plugins:
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.1"
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
       repository: "https://maven.lavalink.dev/releases"
   server:
     password: "${LAVALINK_SERVER_PASSWORD}"
@@ -90,3 +90,9 @@ logging:
   level:
     root: INFO
     lavalink: INFO
+  request:
+    # Lavalink domyslnie loguje CALE cialo kazdego zadania POST. Endpoint
+    # /youtube (podmiana poTokena) dostaje sekrety w body, wiec bez tego
+    # ustawienia poToken/visitorData/refreshToken laduja w logach kontenera
+    # w plaintekscie. Sciezka i status zadania zostaja — gubimy tylko payload.
+    includePayload: false
