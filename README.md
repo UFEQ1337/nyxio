@@ -24,7 +24,7 @@ Pięć kontenerów (`docker-compose.yml`):
 | **bot** | Logika: komendy, kolejka, UI, stan per-serwer (Python, lekki ~50 MB RAM) |
 | **lavalink** | Pozyskiwanie i **transkodowanie audio** (JVM); bot sam nie koduje dźwięku |
 | **yt-cipher** | Zdalny deszyfrator sygnatur YouTube — odciąża wtyczkę `youtube-source` przy nowych wersjach player-script |
-| **pot-refresher** | Generuje parę `poToken`/`visitorData` i podmienia ją w Lavalinku przez REST (bez restartu) |
+| **pot-refresher** | Utrzymuje świeży `poToken`/`visitorData` w Lavalinku — wysyła parę przez REST (`POST /youtube`), bez restartu węzła |
 | **redis** | Trwały snapshot kolejki → wznowienie sesji po restarcie (`/wznow`) |
 
 Zależności startowe: `yt-cipher` → `lavalink` (healthcheck) → `bot`,
@@ -188,9 +188,9 @@ Zmienne czytane przez `docker-compose.yml` (Lavalink / YouTube):
 |---|---|---|
 | `NYXIO_YTCIPHER_TOKEN` | `changeme` | Sekret współdzielony Lavalink ↔ `yt-cipher` (ustaw własny) |
 | `NYXIO_YOUTUBE_REFRESH_TOKEN` | — | OAuth YouTube — omija „This video requires login” na VPS (zob. niżej) |
-| `NYXIO_PO_TOKEN` / `NYXIO_VISITOR_DATA` | — | Para poToken; **zostaw puste** — generuje ją `pot-refresher`. Wypełnij tylko w trybie ręcznym |
-| `NYXIO_POT_REFRESH_HOURS` | `6` | Co ile godzin `pot-refresher` generuje nową parę |
-| `NYXIO_POT_GENERATOR_CMD` | (patrz compose) | Polecenie generatora; zmień, gdy w logach serwisu pojawi się `generator_output_unparsed` |
+| `NYXIO_PO_TOKEN` / `NYXIO_VISITOR_DATA` | — | Para poToken (wygenerowana gdziekolwiek); `pot-refresher` dosyła ją do Lavalinka i powtarza po restartach |
+| `NYXIO_POT_REFRESH_HOURS` | `6` | Co ile godzin `pot-refresher` ponawia wysyłkę / generowanie |
+| `NYXIO_POT_BASE_IMAGE` / `NYXIO_POT_GENERATOR_CMD` | — | Opcjonalne generowanie pary w kontenerze (obraz generatora + polecenie) |
 | `NYXIO_LAVALINK_IMAGE` i pokrewne | ruchome tagi | Przypnij wersje obrazów na produkcji (`:4`, `:master`, `:latest` = niedeterministyczny deploy) |
 
 Wzór: [`.env.example`](.env.example). `.env` i `data/` są w

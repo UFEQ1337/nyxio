@@ -77,15 +77,20 @@ services:
     environment:
       - API_TOKEN=${NYXIO_YTCIPHER_TOKEN:-changeme}
 
-  # Generuje parę poToken/visitorData i wpycha ją do Lavalinka przez REST.
-  # Bez świeżego poTokena klienci WEB/WEBEMBEDDED zwracają "This video
+  # Utrzymuje świeży poToken/visitorData w Lavalinku (POST /youtube, bez
+  # restartu). Bez poTokena klienci WEB/WEBEMBEDDED zwracają "This video
   # requires login" / "Video player configuration error" — dokładnie to, co
-  # widać było w logach. Para wygasa, więc statyczny wpis w .env nie wystarcza.
+  # widać było w logach.
+  #
+  # Domyślnie działa jako "dosyłacz": bierze parę z NYXIO_PO_TOKEN /
+  # NYXIO_VISITOR_DATA i pilnuje, by Lavalink ją miał po każdym restarcie.
+  # Generowanie w kontenerze włączasz przez NYXIO_POT_BASE_IMAGE +
+  # NYXIO_POT_GENERATOR_CMD (patrz tools/pot_refresher/Dockerfile).
   pot-refresher:
     build:
       context: ./tools/pot_refresher
       args:
-        POT_BASE_IMAGE: ${NYXIO_POT_BASE_IMAGE:-ghcr.io/iv-org/youtube-trusted-session-generator:latest}
+        POT_BASE_IMAGE: ${NYXIO_POT_BASE_IMAGE:-python:3.12-slim}
     restart: unless-stopped
     logging: *default-logging
     environment:
@@ -93,12 +98,12 @@ services:
       - LAVALINK_PASSWORD=${NYXIO_LAVALINK_PASSWORD:-youshallnotpass}
       - YOUTUBE_REFRESH_TOKEN=${NYXIO_YOUTUBE_REFRESH_TOKEN:-}
       - POT_REFRESH_HOURS=${NYXIO_POT_REFRESH_HOURS:-6}
-      # Polecenie generatora. Jeśli obraz bazowy zmieni ścieżkę/entrypoint,
-      # serwis wypisze w logach 'generator_output_unparsed' wraz z ogonem
-      # wyjścia — wtedy popraw tę zmienną w .env (NYXIO_POT_GENERATOR_CMD).
-      - POT_GENERATOR_CMD=${NYXIO_POT_GENERATOR_CMD:-python /app/potoken_generator/main.py --oneshot}
-      # Tryb ręczny: wypełnij obie zmienne, a generator nie będzie uruchamiany
-      # (serwis dopilnuje tylko, by Lavalink miał tę parę po każdym restarcie).
+      # Puste = brak generowania w kontenerze (tryb dosyłacza). Ustaw razem
+      # z NYXIO_POT_BASE_IMAGE, jeśli chcesz generować parę automatycznie;
+      # przy złym poleceniu serwis loguje 'generator_output_unparsed' wraz
+      # z ogonem wyjścia, po którym widać co generator faktycznie wypisał.
+      - POT_GENERATOR_CMD=${NYXIO_POT_GENERATOR_CMD:-}
+      # Para wygenerowana ręcznie (gdziekolwiek — nie musi to być ten VPS).
       - POT_TOKEN=${NYXIO_PO_TOKEN:-}
       - POT_VISITOR_DATA=${NYXIO_VISITOR_DATA:-}
     depends_on:
