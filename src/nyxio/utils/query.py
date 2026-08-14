@@ -8,7 +8,15 @@ Decyzja produktowa (bez zmian względem natywnego silnika):
 
 from __future__ import annotations
 
+import re
 from urllib.parse import parse_qs, urlparse
+
+# Ozdobniki z tytulow YouTube, ktore na SoundCloud tylko psuja trafnosc
+# wyszukiwania ("Official Video", "[Lyrics]", "(4K Remaster)"...).
+_NOISE_RE = re.compile(
+    r"[(\[][^)\]]*(official|video|audio|lyric|visuali|hd|4k|remaster|mv|full)[^)\]]*[)\]]",
+    re.IGNORECASE,
+)
 
 
 def is_url(query: str) -> bool:
@@ -50,6 +58,21 @@ def strip_to_video(url: str) -> str:
     if vid:
         return f"https://www.youtube.com/watch?v={vid}"
     return url
+
+
+def soundcloud_query(title: str, author: str | None = None) -> str:
+    """Buduje zapytanie SoundCloud z metadanych utworu, ktory padl na YouTube.
+
+    Tytuly z YouTube sa obwieszone ozdobnikami, ktore na SoundCloud psuja
+    trafnosc — wycinamy je. Wykonawce dokladamy tylko, gdy nie ma go juz
+    w tytule (czeste "Artysta - Utwor").
+    """
+    cleaned = _NOISE_RE.sub(" ", title)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -–—|")
+    parts = [cleaned] if cleaned else []
+    if author and author.casefold() not in cleaned.casefold():
+        parts.append(author)
+    return f"scsearch:{' '.join(parts)}" if parts else f"scsearch:{title}"
 
 
 def build_search(query: str) -> tuple[str, bool]:

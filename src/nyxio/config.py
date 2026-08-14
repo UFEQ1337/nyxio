@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     max_playlist_items: int = 100
     idle_timeout_seconds: int = 180
 
+    # Gdy YouTube odmowi (loadFailed), sprobuj tego samego utworu na
+    # SoundCloud zamiast po prostu go pominac. Ratuje odtwarzanie, gdy
+    # YouTube blokuje IP serwera.
+    source_fallback: bool = True
+
     redis_url: str | None = None
 
     lavalink_host: str = "lavalink"

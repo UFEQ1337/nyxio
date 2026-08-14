@@ -72,3 +72,35 @@ def test_build_search_soundcloud_url_passthrough():
     assert q == sc
     assert is_pl is False
     assert not q.startswith("ytsearch:")
+
+
+# ---- Fallback na SoundCloud ---------------------------------------------
+
+
+def test_soundcloud_query_strips_youtube_noise():
+    from nyxio.utils.query import soundcloud_query
+
+    q = soundcloud_query("Daft Punk - Around The World (Official Video)", "Daft Punk")
+    assert q.startswith("scsearch:")
+    assert "official" not in q.casefold()
+    assert "Around The World" in q
+
+
+def test_soundcloud_query_appends_author_when_missing():
+    from nyxio.utils.query import soundcloud_query
+
+    expected = "scsearch:Around The World Daft Punk"
+    assert soundcloud_query("Around The World", "Daft Punk") == expected
+
+
+def test_soundcloud_query_skips_duplicate_author():
+    from nyxio.utils.query import soundcloud_query
+
+    q = soundcloud_query("Daft Punk - Around The World", "Daft Punk")
+    assert q.casefold().count("daft punk") == 1
+
+
+def test_soundcloud_query_survives_title_that_is_all_noise():
+    from nyxio.utils.query import soundcloud_query
+
+    assert soundcloud_query("(Official Video)", None) == "scsearch:(Official Video)"

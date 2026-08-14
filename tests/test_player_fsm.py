@@ -25,6 +25,9 @@ async def player():
     manager = MagicMock()
     manager.settings.max_queue_size = 100
     manager.settings.idle_timeout_seconds = 999  # nie odpalaj idle w testach
+    # Domyslnie wylaczony, zeby testy petli bledow nie probowaly siegac do
+    # wavelink; testy fallbacku wlaczaja go u siebie.
+    manager.settings.source_fallback = False
     manager.state_store.save_queue = AsyncMock()
     manager.teardown = AsyncMock()
     manager.guild_config.get_default_volume.return_value = 100
@@ -408,3 +411,62 @@ async def test_idle_timeout_completes_teardown(player, monkeypatch):
     player._manager.teardown.assert_awaited_once()
     # Kluczowe: shutdown dobiegł do końca, czyli bot faktycznie się rozłączył.
     player.player.disconnect.assert_awaited_once()
+
+
+# ---- Fallback na SoundCloud gdy YouTube odmawia -------------------------
+
+
+async def test_load_failure_falls_back_to_soundcloud(player, make_track, monkeypatch):
+    import nyxio.core.player as player_mod
+
+    failed = make_track("Utwor")
+    failed.author = "Wykonawca"
+    player.queue.add(failed)
+    player.queue.get_next()  # staje sie current
+    player._manager.settings.source_fallback = True
+
+    sc = MagicMock(identifier="sc1")
+    sc.title = "Utwor (SoundCloud)"
+    sc.uri = "https://soundcloud.com/x/y"
+    search = AsyncMock(return_value=[sc])
+    monkeypatch.setattr(player_mod.wavelink.Playable, "search", search)
+
+    await player.handle_track_end("loadFailed")
+
+    assert search.await_count == 1
+    assert search.await_args.args[0].startswith("scsearch:")
+    # Zastepnik trafil na przod i od razu poszedl do odtwarzania.
+    player.player.play.assert_awaited_once()
+
+
+async def test_failed_soundcloud_track_does_not_loop(player, make_track, monkeypatch):
+    """Utwor z SoundCloud, ktory padl, nie moze szukac fallbacku dla siebie."""
+    import nyxio.core.player as player_mod
+
+    failed = make_track("Utwor")
+    failed.uri = "https://soundcloud.com/x/y"
+    player.queue.add(failed)
+    player.queue.get_next()
+    player._manager.settings.source_fallback = True
+
+    search = AsyncMock(return_value=[])
+    monkeypatch.setattr(player_mod.wavelink.Playable, "search", search)
+
+    await player.handle_track_end("loadFailed")
+
+    search.assert_not_awaited()
+
+
+async def test_fallback_can_be_disabled(player, make_track, monkeypatch):
+    import nyxio.core.player as player_mod
+
+    player.queue.add(make_track("Utwor"))
+    player.queue.get_next()
+    player._manager.settings.source_fallback = False
+
+    search = AsyncMock(return_value=[])
+    monkeypatch.setattr(player_mod.wavelink.Playable, "search", search)
+
+    await player.handle_track_end("loadFailed")
+
+    search.assert_not_awaited()

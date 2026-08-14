@@ -19,6 +19,7 @@ from nyxio.core.track import Track
 from nyxio.infra.logging import get_logger
 from nyxio.utils.errors import QueueFullError
 from nyxio.utils.filters import apply_filter_preset
+from nyxio.utils.query import soundcloud_query
 
 if TYPE_CHECKING:
     from nyxio.core.manager import PlayerManager
@@ -240,11 +241,49 @@ class GuildPlayer:
             return
         if norm in _FAILURE_REASONS:
             self.note_failure(norm)
+            # Zanim odpuscimy utwor — sprobuj go z innego zrodla.
+            await self._try_source_fallback(self.queue.current)
         elif norm == "finished":
             # Utwór dograł do końca — mocniejszy dowód niż pozycja > 1 s.
             self._consecutive_failures = 0
             self._had_successful_start = True
         await self._advance()
+
+    async def _try_source_fallback(self, failed: Track | None) -> bool:
+        """Utwor padl na YouTube — poszukaj go na SoundCloud i wstaw na przod.
+
+        Sens: gdy YouTube blokuje IP serwera, pomijanie utworow konczy sie cisza
+        na kanale. SoundCloud nie wymaga zadnych tokenow ani OAuth, wiec gra
+        wtedy, gdy YouTube odmawia.
+        """
+        if failed is None or not self._manager.settings.source_fallback:
+            return False
+        # Nie zapetlaj sie, gdy to juz jest utwor z SoundCloud.
+        if "soundcloud.com" in (failed.uri or "").casefold():
+            return False
+        query = soundcloud_query(failed.title, failed.author)
+        try:
+            results = await wavelink.Playable.search(query)
+        except Exception:  # noqa: BLE001
+            log.warning("fallback_search_failed", guild_id=self.guild_id)
+            return False
+        if not results or isinstance(results, wavelink.Playlist):
+            log.info("fallback_no_results", guild_id=self.guild_id, title=failed.title)
+            return False
+        replacement = Track.from_playable(
+            results[0], failed.requested_by_id, failed.requested_by_name
+        )
+        try:
+            self.queue.add_next(replacement)
+        except QueueFullError:
+            return False
+        log.info(
+            "source_fallback",
+            guild_id=self.guild_id,
+            failed_title=failed.title,
+            fallback_title=replacement.title,
+        )
+        return True
 
     def _can_autoplay(self) -> bool:
         """AutoPlay tylko gdy łańcuch odtwarzania faktycznie działa.
