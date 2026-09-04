@@ -258,12 +258,17 @@ class GuildPlayer:
         """
         if failed is None or not self._manager.settings.source_fallback:
             return False
-        # Nie zapetlaj sie, gdy to juz jest utwor z SoundCloud.
-        if "soundcloud.com" in (failed.uri or "").casefold():
+        # Nie zapetlaj sie: zastepnik, ktory sam padl, nie szuka kolejnego.
+        # Sprawdzanie po domenie nie wystarczylo — gdy wyszukiwanie wracalo z
+        # innego zrodla niz zamierzone, utwor "fallbackowal" sam na siebie.
+        if failed.from_fallback or "soundcloud.com" in (failed.uri or "").casefold():
             return False
         query = soundcloud_query(failed.title, failed.author)
         try:
-            results = await wavelink.Playable.search(query)
+            # source=None — patrz komentarz w music.py: bez tego wavelink
+            # zamienia 'scsearch:...' na 'ytmsearch:scsearch:...' i fallback
+            # wraca z utworem z YouTube, ktory pada tak samo jak oryginal.
+            results = await wavelink.Playable.search(query, source=None)
         except Exception:  # noqa: BLE001
             log.warning("fallback_search_failed", guild_id=self.guild_id)
             return False
@@ -273,6 +278,7 @@ class GuildPlayer:
         replacement = Track.from_playable(
             results[0], failed.requested_by_id, failed.requested_by_name
         )
+        replacement.from_fallback = True
         try:
             self.queue.add_next(replacement)
         except QueueFullError:

@@ -23,9 +23,10 @@ class Settings(BaseSettings):
     idle_timeout_seconds: int = 180
 
     # Gdy YouTube odmowi (loadFailed), sprobuj tego samego utworu na
-    # SoundCloud zamiast po prostu go pominac. Ratuje odtwarzanie, gdy
-    # YouTube blokuje IP serwera.
-    source_fallback: bool = True
+    # SoundCloud zamiast po prostu go pominac. DOMYSLNIE WYLACZONE — bot ma
+    # grac z YouTube, a podmiana na inne wykonanie (cover/remiks/live) myli
+    # bardziej, niz pomaga. Wlacz przez NYXIO_SOURCE_FALLBACK=true.
+    source_fallback: bool = False
 
     redis_url: str | None = None
 

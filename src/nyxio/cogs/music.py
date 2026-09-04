@@ -112,7 +112,7 @@ class MusicCog(commands.Cog):
         if cached is not None:
             return cached
         try:
-            results = await wavelink.Playable.search(f"ytsearch:{current}")
+            results = await wavelink.Playable.search(f"ytsearch:{current}", source=None)
         except Exception:  # noqa: BLE001
             return []
         if not results or isinstance(results, wavelink.Playlist):
@@ -145,7 +145,11 @@ class MusicCog(commands.Cog):
 
         search_query, _ = build_search(query)
         try:
-            results = await wavelink.Playable.search(search_query)
+            # source=None: prefiks ('ytsearch:') niesie juz build_search. Bez tego
+            # wavelink doklada wlasny domyslny 'ytmsearch:' i do Lavalinka
+            # leci 'ytmsearch:ytsearch:fraza' — czyli szukanie dosłownego
+            # ciagu 'ytsearch:fraza' w YouTube Music.
+            results = await wavelink.Playable.search(search_query, source=None)
         except Exception:  # noqa: BLE001
             await interaction.followup.send("❌ Błąd wyszukiwania (Lavalink).")
             return

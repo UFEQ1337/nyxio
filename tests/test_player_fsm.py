@@ -470,3 +470,49 @@ async def test_fallback_can_be_disabled(player, make_track, monkeypatch):
     await player.handle_track_end("loadFailed")
 
     search.assert_not_awaited()
+
+
+# ---- Regresja: wavelink doklejal wlasny prefiks do naszego --------------
+
+
+async def test_fallback_search_disables_wavelink_default_prefix(player, make_track, monkeypatch):
+    """wavelink.Playable.search domyslnie doklada 'ytmsearch:' PRZED nasz
+    prefiks. Bez source=None do Lavalinka leci 'ytmsearch:scsearch:...',
+    czyli szukanie doslownego ciagu w YouTube Music — i fallback wracal
+    z utworem z YouTube, ktory padal tak samo jak oryginal."""
+    import nyxio.core.player as player_mod
+
+    failed = make_track("Utwor")
+    player.queue.add(failed)
+    player.queue.get_next()
+    player._manager.settings.source_fallback = True
+
+    sc = MagicMock(identifier="sc1")
+    sc.title = "Utwor"
+    sc.uri = "https://soundcloud.com/x/y"
+    search = AsyncMock(return_value=[sc])
+    monkeypatch.setattr(player_mod.wavelink.Playable, "search", search)
+
+    await player.handle_track_end("loadFailed")
+
+    assert search.await_args.kwargs.get("source", "BRAK") is None
+
+
+async def test_fallback_track_does_not_fallback_again(player, make_track, monkeypatch):
+    """Zastepnik, ktory sam padl, nie moze szukac kolejnego zastepnika —
+    nawet gdy wyszukiwanie zwrocilo utwor spoza SoundCloud."""
+    import nyxio.core.player as player_mod
+
+    failed = make_track("Utwor")
+    failed.uri = "https://www.youtube.com/watch?v=abc"  # zastepnik NIE z SC
+    failed.from_fallback = True
+    player.queue.add(failed)
+    player.queue.get_next()
+    player._manager.settings.source_fallback = True
+
+    search = AsyncMock(return_value=[])
+    monkeypatch.setattr(player_mod.wavelink.Playable, "search", search)
+
+    await player.handle_track_end("loadFailed")
+
+    search.assert_not_awaited()

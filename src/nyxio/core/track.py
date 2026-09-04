@@ -23,6 +23,9 @@ class Track:
     requested_by_id: int
     requested_by_name: str
     playable: Any = None  # wavelink.Playable
+    # Utwor powstal z fallbacku na inne zrodlo. Chroni przed petla:
+    # zastepnik, ktory sam padnie, nie szuka juz zastepnika dla siebie.
+    from_fallback: bool = False
 
     @classmethod
     def from_playable(
