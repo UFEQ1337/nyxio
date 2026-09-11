@@ -4,8 +4,14 @@ server:
 
 lavalink:
   plugins:
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
-      repository: "https://maven.lavalink.dev/releases"
+    # SNAPSHOT z galezi glownej youtube-source (f45bbb7, 19.08.2026), nie wydanie.
+    # 1.18.2 (27.07) to wciaz najnowszy release, ale po nim wpadly poprawki
+    # celujace dokladnie w nasze awarie: "make IOS playable" (u nas IOS -> 400)
+    # i PS4 User-Agent dla klienta TV (u nas TV -> "The page needs to be
+    # reloaded"). Wroc na release, gdy wyjdzie wersja nowsza niz 1.18.2:
+    #   curl -s https://maven.lavalink.dev/releases/dev/lavalink/youtube/youtube-plugin/maven-metadata.xml
+    - dependency: "dev.lavalink.youtube:youtube-plugin:f45bbb7aebfcbc1c553769e04af6cd43afa8b7c3"
+      repository: "https://maven.lavalink.dev/snapshots"
   server:
     password: "${LAVALINK_SERVER_PASSWORD}"
     sources:
